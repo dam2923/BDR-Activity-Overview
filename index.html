@@ -132,6 +132,29 @@ const REPS = [
   { name: "Miles Smith",          color: "#a78bfa" },
 ];
 
+// UK bank holidays (England & Wales) — dates excluded from daily view and
+// from weekly roll-ups, same treatment as weekends. Add more years as needed.
+const BANK_HOLIDAYS = new Set([
+  // 2026
+  "2026-01-01", // New Year's Day
+  "2026-04-03", // Good Friday
+  "2026-04-06", // Easter Monday
+  "2026-05-04", // Early May bank holiday
+  "2026-05-25", // Spring bank holiday
+  "2026-08-31", // Summer bank holiday
+  "2026-12-25", // Christmas Day
+  "2026-12-28", // Boxing Day (substitute — 26 Dec falls on a Saturday)
+  // 2027
+  "2027-01-01",
+  "2027-03-26", // Good Friday
+  "2027-03-29", // Easter Monday
+  "2027-05-03",
+  "2027-05-31",
+  "2027-08-30",
+  "2027-12-27", // Christmas Day (substitute)
+  "2027-12-28", // Boxing Day (substitute)
+]);
+
 // ---------- Load data.json ----------
 let RAW = null;   // { rows: [{date:"YYYY-MM-DD", rep:"Name"}, ...], generated_at: "ISO" }
 let allDays = [];
@@ -174,12 +197,13 @@ function build(){
   const todayIso = iso(new Date());
   if(todayIso > maxDate) maxDate = todayIso;
 
-  // Build allDays: every weekday between min and max
+  // Build allDays: every weekday between min and max, excluding UK bank holidays
   allDays = [];
   const d = new Date(minDate); const endD = new Date(maxDate);
   while(d<=endD){
     const w = d.getDay();
-    if(w!==0 && w!==6) allDays.push(new Date(d));
+    const key = iso(d);
+    if(w!==0 && w!==6 && !BANK_HOLIDAYS.has(key)) allDays.push(new Date(d));
     d.setDate(d.getDate()+1);
   }
 
