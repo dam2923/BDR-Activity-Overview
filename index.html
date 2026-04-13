@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Call Activity by Rep</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#0b1220; --panel:#121a2b; --panel2:#182339; --text:#e8ecf5;
+    --muted:#94a3b8; --accent:#60a5fa; --border:#223049;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .wrap{max-width:1200px;margin:0 auto;padding:32px 24px 64px}
+  header{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;flex-wrap:wrap;margin-bottom:8px}
+  h1{font-size:28px;font-weight:700;margin:0;letter-spacing:-0.01em}
+  .sub{color:var(--muted);font-size:14px;margin-top:4px}
+  .updated{color:var(--muted);font-size:13px}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:20px}
+  .row{display:grid;grid-template-columns:1fr;gap:16px;margin-top:16px}
+  @media(min-width:900px){.row.two{grid-template-columns:1fr 1fr}}
+  .filters{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:4px 0 8px}
+  .filters .label{color:var(--muted);font-size:13px;margin-right:6px}
+  .chip{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;background:var(--panel2);border:1px solid var(--border);color:var(--text);font-size:13px;cursor:pointer;user-select:none;transition:all .12s}
+  .chip input{accent-color:var(--accent);margin:0}
+  .chip.on{border-color:var(--accent);background:#1a2945;box-shadow:0 0 0 1px #1e3a66 inset}
+  .chip.off{opacity:.6}
+  .datewrap{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px}
+  .datewrap input[type=date]{background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 8px;font-size:13px;font-family:inherit;color-scheme:dark}
+  .section-divider{height:1px;background:var(--border);margin:14px 0}
+  .kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:16px}
+  @media(min-width:700px){.kpis{grid-template-columns:repeat(4,1fr)}}
+  .kpi{background:var(--panel2);border:1px solid var(--border);border-radius:12px;padding:14px}
+  .kpi .v{font-size:22px;font-weight:700}
+  .kpi .l{font-size:12px;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:.04em}
+  h3{font-size:14px;font-weight:600;margin:0 0 12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:8px 10px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap}
+  th:first-child,td:first-child{text-align:left}
+  thead th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+  tbody tr:hover{background:#0f1830}
+  .chart-wrap{position:relative;height:320px}
+  .pill{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle}
+  .foot{color:var(--muted);font-size:12px;margin-top:18px}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap}
+  .btn{background:var(--panel2);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:8px;font-size:12px;cursor:pointer;font-family:inherit}
+  .btn:hover{border-color:var(--accent)}
+  .btn.on{border-color:var(--accent);background:#1e3a66}
+  .rng{color:var(--muted);font-size:12px;margin-left:8px}
+  .banner{background:#3b1d1d;border:1px solid #7a2e2e;color:#fecaca;padding:10px 14px;border-radius:10px;font-size:13px;margin-bottom:12px;display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Call Activity by Rep</h1>
+      <div class="sub">Daily + weekly view · weekends excluded · refreshes nightly from HubSpot</div>
+    </div>
+    <div class="updated" id="updated"></div>
+  </header>
+
+  <div class="banner" id="banner"></div>
+
+  <div class="card">
+    <div class="filters" id="dateFilters">
+      <span class="label">Date range</span>
+      <button class="btn" data-preset="7">Last 7 days</button>
+      <button class="btn" data-preset="30">Last 30 days</button>
+      <button class="btn" data-preset="90">Last 90 days</button>
+      <button class="btn on" data-preset="qtd">This quarter</button>
+      <button class="btn" data-preset="lastq">Last quarter</button>
+      <button class="btn" data-preset="6m">Last 6 months</button>
+      <button class="btn" data-preset="ytd">YTD</button>
+      <button class="btn" data-preset="all">All</button>
+    </div>
+    <div class="datewrap">
+      <span class="label">Custom</span>
+      <input type="date" id="fromDate" />
+      <span style="color:var(--muted)">to</span>
+      <input type="date" id="toDate" />
+      <button class="btn" id="applyCustom">Apply</button>
+      <span class="rng" id="rangeLabel"></span>
+    </div>
+
+    <div class="section-divider"></div>
+
+    <div class="filters" id="filters">
+      <span class="label">Reps</span>
+      <span style="flex:1"></span>
+      <div class="toolbar">
+        <button class="btn" id="all">All</button>
+        <button class="btn" id="none">None</button>
+      </div>
+    </div>
+
+    <div class="kpis" id="kpis"></div>
+
+    <div class="row two" style="margin-top:20px">
+      <div class="card" style="background:var(--panel2)">
+        <h3>Daily calls by rep (weekdays only)</h3>
+        <div class="chart-wrap"><canvas id="daily"></canvas></div>
+      </div>
+      <div class="card" style="background:var(--panel2)">
+        <h3>Weekly calls by rep (Monday week-start)</h3>
+        <div class="chart-wrap"><canvas id="weekly"></canvas></div>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:20px">
+      <div class="card" style="background:var(--panel2);overflow-x:auto">
+        <h3>Weekly summary</h3>
+        <table id="weeklyTable"></table>
+      </div>
+    </div>
+
+    <div class="foot" id="foot">Source: HubSpot Engagements → Calls, filtered by Activity Assigned To.</div>
+  </div>
+</div>
+
+<script>
+// Configure rep colors here. Names must match Activity Assigned To exactly
+// (HubSpot owner full name: "First Last"). Reps returned by the fetch but
+// not listed here will be ignored; reps listed here but absent from the
+// data will show as zero.
+const REPS = [
+  { name: "Tyreek Burke",         color: "#60a5fa" },
+  { name: "Jennifer Fasida",      color: "#f472b6" },
+  { name: "Liam Bolger-Prentice", color: "#34d399" },
+  { name: "Zoe Cornelius",        color: "#fbbf24" },
+  { name: "Miles Smith",          color: "#a78bfa" },
+];
+
+// ---------- Load data.json ----------
+let RAW = null;   // { rows: [{date:"YYYY-MM-DD", rep:"Name"}, ...], generated_at: "ISO" }
+let allDays = [];
+let allData = {}; // rep -> array aligned to allDays
+
+const banner = document.getElementById("banner");
+function showBanner(msg){ banner.style.display="block"; banner.textContent = msg }
+
+fetch("data/data.json?t=" + Date.now(), {cache:"no-store"})
+  .then(r => { if(!r.ok) throw new Error("data.json not found"); return r.json() })
+  .then(d => { RAW = d; build(); })
+  .catch(err => {
+    showBanner("Could not load data/data.json — showing empty dashboard. First run of the GitHub Action will populate it.");
+    RAW = { rows: [], generated_at: null };
+    build();
+  });
+
+function iso(d){ const x=new Date(d); x.setHours(0,0,0,0); return x.toISOString().slice(0,10) }
+
+function build(){
+  // Build counts per (date, rep) — already filtered server-side to Calls, non-blank rep, weekdays only.
+  const counts = {}; // "YYYY-MM-DD" -> rep -> count
+  let minDate=null, maxDate=null;
+  RAW.rows.forEach(row=>{
+    const d = row.date; const r = row.rep;
+    if(!counts[d]) counts[d]={};
+    counts[d][r] = (counts[d][r]||0) + 1;
+    if(!minDate||d<minDate) minDate=d;
+    if(!maxDate||d>maxDate) maxDate=d;
+  });
+
+  // Fallback range if no data
+  if(!minDate){
+    const t = new Date(); t.setHours(0,0,0,0);
+    const s = new Date(t); s.setDate(t.getDate()-30);
+    minDate = iso(s); maxDate = iso(t);
+  }
+
+  // Build allDays: every weekday between min and max
+  allDays = [];
+  const d = new Date(minDate); const endD = new Date(maxDate);
+  while(d<=endD){
+    const w = d.getDay();
+    if(w!==0 && w!==6) allDays.push(new Date(d));
+    d.setDate(d.getDate()+1);
+  }
+
+  // Fill series per configured rep
+  allData = {};
+  REPS.forEach(r=>{
+    allData[r.name] = allDays.map(day=>{
+      const c = counts[iso(day)]; return c ? (c[r.name]||0) : 0;
+    });
+  });
+
+  // updated label
+  const updEl = document.getElementById("updated");
+  if(RAW.generated_at){
+    const dt = new Date(RAW.generated_at);
+    updEl.textContent = "Last refresh: " + dt.toLocaleString();
+  } else {
+    updEl.textContent = "Not yet refreshed";
+  }
+
+  // initial range
+  rangeStart = allDays[0] || new Date();
+  rangeEnd   = allDays[allDays.length-1] || new Date();
+
+  mountFilters();
+  // default preset
+  applyPreset("qtd");
+}
+
+// ---------- Filtering state ----------
+const activeReps = new Set(REPS.map(r=>r.name));
+let rangeStart, rangeEnd;
+
+const fmtShort = d => d.toLocaleDateString(undefined,{month:"short",day:"numeric"});
+const fmtWithYear = d => d.toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"});
+const fmtFull = d => d.toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric",year:"numeric"});
+
+function mondayOf(date){
+  const x = new Date(date); const day = (x.getDay()+6)%7; x.setDate(x.getDate()-day); x.setHours(0,0,0,0); return x;
+}
+function quarterStart(d){ const q=Math.floor(d.getMonth()/3); return new Date(d.getFullYear(), q*3, 1) }
+function addDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x }
+function addMonths(d,n){ const x=new Date(d); x.setMonth(x.getMonth()+n); return x }
+
+function applyPreset(key){
+  if(!allDays.length) return;
+  const last = allDays[allDays.length-1];
+  let s, e = last;
+  if(key==="7"){ s = addDays(last,-10) }
+  else if(key==="30"){ s = addDays(last,-44) }
+  else if(key==="90"){ s = addDays(last,-120) }
+  else if(key==="qtd"){ s = quarterStart(last) }
+  else if(key==="lastq"){ const qs = quarterStart(last); s = addMonths(qs,-3); e = addDays(qs,-1) }
+  else if(key==="6m"){ s = addMonths(last,-6) }
+  else if(key==="ytd"){ s = new Date(last.getFullYear(),0,1) }
+  else { s = allDays[0]; e = allDays[allDays.length-1]; }
+  rangeStart = s; rangeEnd = e;
+  document.getElementById("fromDate").value = iso(rangeStart);
+  document.getElementById("toDate").value = iso(rangeEnd);
+  render();
+}
+
+function mountFilters(){
+  const filtersEl = document.getElementById("filters");
+  // Clear previously injected chips (if any)
+  filtersEl.querySelectorAll(".chip").forEach(c=>c.remove());
+  REPS.forEach(r=>{
+    const chip = document.createElement("label");
+    chip.className="chip on";
+    chip.innerHTML = `<span class="pill" style="background:${r.color}"></span><input type="checkbox" checked>${r.name}`;
+    chip.querySelector("input").addEventListener("change",(e)=>{
+      if(e.target.checked){activeReps.add(r.name);chip.classList.add("on");chip.classList.remove("off")}
+      else{activeReps.delete(r.name);chip.classList.remove("on");chip.classList.add("off")}
+      render();
+    });
+    filtersEl.insertBefore(chip, filtersEl.children[filtersEl.children.length-2]);
+  });
+  document.getElementById("all").onclick=()=>{
+    activeReps.clear(); REPS.forEach(r=>activeReps.add(r.name));
+    filtersEl.querySelectorAll(".chip").forEach(c=>{c.classList.add("on");c.classList.remove("off");c.querySelector("input").checked=true});
+    render();
+  };
+  document.getElementById("none").onclick=()=>{
+    activeReps.clear();
+    filtersEl.querySelectorAll(".chip").forEach(c=>{c.classList.remove("on");c.classList.add("off");c.querySelector("input").checked=false});
+    render();
+  };
+
+  document.querySelectorAll('#dateFilters .btn').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      document.querySelectorAll('#dateFilters .btn').forEach(b=>b.classList.remove('on'));
+      btn.classList.add('on');
+      applyPreset(btn.dataset.preset);
+    });
+  });
+  document.getElementById("applyCustom").addEventListener("click",()=>{
+    const f = document.getElementById("fromDate").value;
+    const t = document.getElementById("toDate").value;
+    if(!f||!t) return;
+    rangeStart = new Date(f); rangeEnd = new Date(t);
+    if(rangeEnd<rangeStart){ const x=rangeStart; rangeStart=rangeEnd; rangeEnd=x; }
+    document.querySelectorAll('#dateFilters .btn').forEach(b=>b.classList.remove('on'));
+    render();
+  });
+}
+
+// ---------- Charts ----------
+Chart.defaults.color = "#cbd5e1";
+Chart.defaults.borderColor = "#223049";
+Chart.defaults.font.family = "Inter,system-ui,sans-serif";
+
+const dailyCtx = document.getElementById("daily");
+const weeklyCtx = document.getElementById("weekly");
+let dailyChart, weeklyChart;
+
+function render(){
+  const idxs = [];
+  const days = [];
+  allDays.forEach((d,i)=>{
+    if(d>=rangeStart && d<=rangeEnd){ idxs.push(i); days.push(d) }
+  });
+  const data = {};
+  REPS.forEach(r=>{ data[r.name] = idxs.map(i=>allData[r.name][i]) });
+
+  const weeks = [];
+  days.forEach(day=>{
+    const m = iso(mondayOf(day));
+    if(!weeks.length||weeks[weeks.length-1].key!==m) weeks.push({key:m, days:[]});
+    weeks[weeks.length-1].days.push(day);
+  });
+  const weeklyData = {};
+  REPS.forEach(r=>{
+    weeklyData[r.name] = weeks.map(w=>{
+      let total=0;
+      w.days.forEach(dy=>{
+        const idx = days.findIndex(d=>d.getTime()===dy.getTime());
+        total += data[r.name][idx];
+      });
+      return total;
+    });
+  });
+
+  document.getElementById("rangeLabel").textContent =
+    days.length ? `${fmtWithYear(days[0])} — ${fmtWithYear(days[days.length-1])} · ${days.length} weekdays`
+                : "No days in range";
+
+  const shown = REPS.filter(r=>activeReps.has(r.name));
+  let totalCalls=0, totalRepDays=0, best={name:"—",v:0};
+  shown.forEach(r=>{
+    const s = data[r.name];
+    const sum = s.reduce((a,b)=>a+b,0);
+    totalCalls += sum;
+    totalRepDays += s.length;
+    if(sum>best.v){best={name:r.name,v:sum}}
+  });
+  const avgPerDay = totalRepDays? (totalCalls/totalRepDays).toFixed(1):"—";
+  const last7Total = shown.reduce((acc,r)=>{
+    const s = data[r.name];
+    const last7 = s.slice(-7);
+    return acc + last7.reduce((a,b)=>a+b,0);
+  }, 0);
+
+  document.getElementById("kpis").innerHTML = `
+    <div class="kpi"><div class="v">${totalCalls.toLocaleString()}</div><div class="l">Total calls (in range)</div></div>
+    <div class="kpi"><div class="v">${last7Total.toLocaleString()}</div><div class="l">Last 7 weekdays in range</div></div>
+    <div class="kpi"><div class="v">${avgPerDay}</div><div class="l">Avg calls / rep / day</div></div>
+    <div class="kpi"><div class="v">${best.name}</div><div class="l">Top rep (in range)</div></div>
+  `;
+
+  const maxTicks = days.length > 120 ? 10 : (days.length > 40 ? 12 : 14);
+
+  const dailyData = {
+    labels: days.map(d => (days.length>180 ? fmtWithYear(d) : fmtShort(d))),
+    datasets: shown.map(r=>({
+      label: r.name, data: data[r.name],
+      borderColor: r.color, backgroundColor: r.color+"33",
+      tension:.3, pointRadius:0, pointHoverRadius:4, borderWidth:2,
+    }))
+  };
+  if(dailyChart) dailyChart.destroy();
+  dailyChart = new Chart(dailyCtx,{type:"line",data:dailyData,options:{
+    responsive:true, maintainAspectRatio:false,
+    interaction:{mode:"index",intersect:false},
+    plugins:{legend:{position:"bottom",labels:{boxWidth:10,boxHeight:10,usePointStyle:true}}},
+    scales:{
+      x:{ grid:{display:false}, ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:maxTicks} },
+      y:{ grid:{color:"#1b2740"}, beginAtZero:true, ticks:{precision:0} }
+    }
+  }});
+
+  const weeklyChartData = {
+    labels: weeks.map(w=>"Wk of "+fmtShort(new Date(w.key))),
+    datasets: shown.map(r=>({
+      label: r.name, data: weeklyData[r.name],
+      backgroundColor: r.color, borderRadius: 4,
+    }))
+  };
+  if(weeklyChart) weeklyChart.destroy();
+  weeklyChart = new Chart(weeklyCtx,{type:"bar",data:weeklyChartData,options:{
+    responsive:true, maintainAspectRatio:false,
+    plugins:{legend:{position:"bottom",labels:{boxWidth:10,boxHeight:10,usePointStyle:true}}},
+    scales:{
+      x:{ stacked:true, grid:{display:false}, ticks:{autoSkip:true,maxTicksLimit:weeks.length>20?12:20} },
+      y:{ stacked:true, grid:{color:"#1b2740"}, beginAtZero:true, ticks:{precision:0} }
+    }
+  }});
+
+  const t = document.getElementById("weeklyTable");
+  let html = "<thead><tr><th>Week start</th>";
+  shown.forEach(r=>{ html+=`<th><span class="pill" style="background:${r.color}"></span>${r.name}</th>` });
+  html+="<th>Total</th></tr></thead><tbody>";
+  weeks.slice().reverse().forEach(w=>{
+    const origIndex = weeks.indexOf(w);
+    let rowTotal=0;
+    html+=`<tr><td>${fmtWithYear(new Date(w.key))}</td>`;
+    shown.forEach(r=>{ const v=weeklyData[r.name][origIndex]; rowTotal+=v; html+=`<td>${v}</td>` });
+    html+=`<td><strong>${rowTotal}</strong></td></tr>`;
+  });
+  html+="</tbody>"; t.innerHTML = html;
+}
+</script>
+</body>
+</html>
