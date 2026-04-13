@@ -1,0 +1,50 @@
+name: Refresh HubSpot call activity
+
+on:
+  schedule:
+    # 00:00 UTC daily. Change cron to match your preferred timezone:
+    #   "0 5 * * *" = 00:00 US/Eastern (standard time)
+    #   "0 4 * * *" = 00:00 US/Eastern (daylight time)
+    #   "0 8 * * *" = 00:00 US/Pacific (standard time)
+    - cron: "0 0 * * *"
+  workflow_dispatch: {}       # allow manual "Run workflow" in the Actions tab
+  push:
+    branches: [ main ]        # also refresh on pushes to main (optional)
+
+permissions:
+  contents: write              # needed so the job can commit the refreshed data.json
+
+concurrency:
+  group: refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Fetch HubSpot data
+        env:
+          HUBSPOT_TOKEN: ${{ secrets.HUBSPOT_TOKEN }}
+          LOOKBACK_DAYS: "420"
+          TIMEZONE: "UTC"
+        run: python scripts/fetch_hubspot.py
+
+      - name: Commit refreshed data
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/data.json
+          if git diff --staged --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "chore: refresh HubSpot call activity ($(date -u +%Y-%m-%d))"
+            git push
+          fi
