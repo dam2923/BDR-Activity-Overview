@@ -2,10 +2,8 @@ name: Refresh HubSpot call activity
 
 on:
   schedule:
-    # 00:00 UTC daily. Change cron to match your preferred timezone:
-    #   "0 5 * * *" = 00:00 US/Eastern (standard time)
-    #   "0 4 * * *" = 00:00 US/Eastern (daylight time)
-    #   "0 8 * * *" = 00:00 US/Pacific (standard time)
+    # 00:00 GMT (UTC) daily. UK is on GMT in winter and BST (UTC+1) in summer,
+    # so during BST this fires at 01:00 local. Sticking to GMT keeps it simple.
     - cron: "0 0 * * *"
   workflow_dispatch: {}       # allow manual "Run workflow" in the Actions tab
   push:
@@ -17,6 +15,10 @@ permissions:
 concurrency:
   group: refresh
   cancel-in-progress: false
+
+# Opt into Node.js 24 runners ahead of GitHub's June 2026 deprecation of Node 20.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   refresh:
