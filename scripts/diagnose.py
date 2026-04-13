@@ -35,6 +35,20 @@ def get(url):
             except Exception: pass
             raise
 
+def post(url, body):
+    req = urllib.request.Request(url, data=json.dumps(body).encode(), headers=H, method="POST")
+    for a in range(5):
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                return json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            if e.code in (429, 502, 503, 504) and a < 4:
+                time.sleep(2**a); continue
+            body_str = ""
+            try: body_str = e.read().decode()[:400]
+            except Exception: pass
+            return {"__error__": {"code": e.code, "body": body_str}}
+
 # 1) Owners
 print("=" * 70)
 print("OWNERS  (/crm/v3/owners)")
@@ -103,5 +117,41 @@ if nxt:
 else:
     print("  All owners fit in one page; unresolved IDs are probably deactivated")
     print("  users or non-owner internal IDs (e.g. hubspot user IDs vs owner IDs).")
+print()
+print("=" * 70)
+print("TESTING v3 CALLS ENDPOINT  (/crm/v3/objects/calls/search)")
+print("=" * 70)
+# Last 30 days
+since = datetime.now(timezone.utc) - timedelta(days=30)
+since_iso = since.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+body = {
+    "filterGroups": [{"filters": [{
+        "propertyName": "hs_timestamp", "operator": "GTE", "value": since_iso
+    }]}],
+    "properties": ["hs_timestamp", "hubspot_owner_id"],
+    "limit": 10,
+}
+v3 = post(f"{BASE}/crm/v3/objects/calls/search", body)
+if "__error__" in v3:
+    print(f"  ❌ v3 calls endpoint failed: HTTP {v3['__error__']['code']}")
+    print(f"     Response: {v3['__error__']['body']}")
+    print("     → You need a HubSpot scope that grants calls access.")
+    print("       Look for any of: crm.objects.calls.read, sales-email-read,")
+    print("       or ask HubSpot support to enable calls API for your portal.")
+else:
+    total = v3.get("total", 0)
+    results = v3.get("results", [])
+    print(f"  ✅ v3 calls endpoint WORKS.")
+    print(f"     Total calls (last 30 days): {total}")
+    print(f"     Sample of first 10:")
+    for r in results[:10]:
+        p = r.get("properties", {})
+        ts = p.get("hs_timestamp", "?")
+        oid = p.get("hubspot_owner_id")
+        name = "<NO MATCH>"
+        if oid and str(oid) in owners_by_id:
+            o = owners_by_id[str(oid)]
+            name = f"{o.get('firstName','')} {o.get('lastName','')}".strip()
+        print(f"       ts={ts}  ownerId={oid!s:<12}  -> {name}")
 print()
 print("Done.")
