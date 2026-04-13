@@ -56,7 +56,7 @@
   <header>
     <div>
       <h1>Call Activity by Rep</h1>
-      <div class="sub">Daily + weekly view · weekends &amp; UK bank holidays excluded · refreshes nightly from HubSpot <span style="opacity:.5">· v3</span></div>
+      <div class="sub">Daily + weekly view · weekends &amp; UK bank holidays excluded · refreshes nightly from HubSpot <span style="opacity:.5">· v4</span></div>
     </div>
     <div class="updated" id="updated"></div>
   </header>
@@ -172,7 +172,13 @@ fetch("data/data.json?t=" + Date.now(), {cache:"no-store"})
     build();
   });
 
-function iso(d){ const x=new Date(d); x.setHours(0,0,0,0); return x.toISOString().slice(0,10) }
+function iso(d){
+  const x = new Date(d);
+  const y  = x.getFullYear();
+  const m  = String(x.getMonth()+1).padStart(2,"0");
+  const dd = String(x.getDate()).padStart(2,"0");
+  return `${y}-${m}-${dd}`;
+}
 
 function build(){
   // Build counts per (date, rep) — already filtered server-side to Calls, non-blank rep, weekdays only.
