@@ -1,0 +1,7 @@
+{
+  "generated_at": null,
+  "timezone": "UTC",
+  "lookback_days": 0,
+  "rows": [],
+  "stats": {"total_calls": 0, "kept": 0, "skipped_no_owner": 0, "skipped_weekend": 0}
+}
