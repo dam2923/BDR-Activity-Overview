@@ -56,7 +56,7 @@
   <header>
     <div>
       <h1>Call Activity by Rep</h1>
-      <div class="sub">Daily + weekly view · weekends &amp; UK bank holidays excluded · refreshes nightly from HubSpot <span style="opacity:.5">· v4</span></div>
+      <div class="sub">Daily + weekly view · weekends &amp; UK bank holidays excluded · refreshes nightly from HubSpot <span style="opacity:.5">· v5</span></div>
     </div>
     <div class="updated" id="updated"></div>
   </header>
@@ -203,14 +203,19 @@ function build(){
   const todayIso = iso(new Date());
   if(todayIso > maxDate) maxDate = todayIso;
 
-  // Build allDays: every weekday between min and max, excluding UK bank holidays
+  // Build allDays: every weekday between min and max, excluding UK bank holidays.
+  // Iterate in UTC so DST transitions don't shift `d` past `endD` on the final day.
   allDays = [];
-  const d = new Date(minDate); const endD = new Date(maxDate);
+  const d = new Date(minDate + "T00:00:00Z");
+  const endD = new Date(maxDate + "T00:00:00Z");
   while(d<=endD){
-    const w = d.getDay();
-    const key = iso(d);
-    if(w!==0 && w!==6 && !BANK_HOLIDAYS.has(key)) allDays.push(new Date(d));
-    d.setDate(d.getDate()+1);
+    const w = d.getUTCDay();
+    const key = d.toISOString().slice(0,10);
+    if(w!==0 && w!==6 && !BANK_HOLIDAYS.has(key)){
+      const y = Number(key.slice(0,4)), m = Number(key.slice(5,7))-1, dd = Number(key.slice(8,10));
+      allDays.push(new Date(y, m, dd));
+    }
+    d.setUTCDate(d.getUTCDate()+1);
   }
 
   // Fill series per configured rep
