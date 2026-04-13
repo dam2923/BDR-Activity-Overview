@@ -170,6 +170,10 @@ function build(){
     minDate = iso(s); maxDate = iso(t);
   }
 
+  // Always extend the axis through today so zero-activity days still appear
+  const todayIso = iso(new Date());
+  if(todayIso > maxDate) maxDate = todayIso;
+
   // Build allDays: every weekday between min and max
   allDays = [];
   const d = new Date(minDate); const endD = new Date(maxDate);
