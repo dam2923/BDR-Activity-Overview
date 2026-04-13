@@ -37,6 +37,9 @@ jobs:
           HUBSPOT_TOKEN: ${{ secrets.HUBSPOT_TOKEN }}
           LOOKBACK_DAYS: "420"
           TIMEZONE: "UTC"
+          # Comma-separated HubSpot owner full names to include. Must match the
+          # owner's "First Last" exactly as it appears in /crm/v3/owners.
+          REP_NAMES: "Tyreek Burke,Jennifer Fasida,Liam Bolger-Prentice,Zoe Cornelius,Miles Smith"
         run: python scripts/fetch_hubspot.py
 
       - name: Commit refreshed data
