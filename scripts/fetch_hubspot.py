@@ -83,8 +83,12 @@ def http_post(url, body):
 
 
 def fetch_owners():
-    """Return dict: owner_id (str) -> full name."""
-    owners = {}
+    """Return two dicts:
+    - owner_id (str) -> full name
+    - user_id (str) -> full name  (for hs_created_by lookups)
+    """
+    by_owner_id = {}
+    by_user_id = {}
     after = None
     while True:
         url = f"{BASE}/crm/v3/owners?limit=100"
@@ -92,14 +96,17 @@ def fetch_owners():
         data = http_get(url)
         for o in data.get("results", []):
             oid = str(o.get("id"))
+            uid = str(o.get("userId")) if o.get("userId") else None
             first = (o.get("firstName") or "").strip()
             last = (o.get("lastName") or "").strip()
             name = (first + " " + last).strip() or (o.get("email") or "").strip()
             if name:
-                owners[oid] = name
+                by_owner_id[oid] = name
+                if uid:
+                    by_user_id[uid] = name
         after = data.get("paging", {}).get("next", {}).get("after")
         if not after: break
-    return owners
+    return by_owner_id, by_user_id
 
 
 def resolve_rep_ids(owners_by_id, rep_names):
@@ -178,26 +185,22 @@ def search_calls_window(start_dt, end_dt, owner_ids):
 
 # ── Meetings ─────────────────────────────────────────────────────────
 
-def search_meetings_window(start_dt, end_dt, owner_ids):
-    """Paginate /crm/v3/objects/meetings/search for meetings created in a window."""
+def search_meetings_window(start_dt, end_dt):
+    """Paginate /crm/v3/objects/meetings/search for meetings created in a window.
+    Does NOT filter by owner — we attribute meetings to whoever CREATED them
+    (hs_created_by_user_id), not the owner. Filtered to known reps later."""
     rows = []
     after = None
     filters = [
         {"propertyName": "hs_createdate", "operator": "GTE", "value": iso_ms(start_dt)},
         {"propertyName": "hs_createdate", "operator": "LT",  "value": iso_ms(end_dt)},
     ]
-    if owner_ids:
-        filters.append({
-            "propertyName": "hubspot_owner_id",
-            "operator": "IN",
-            "values": owner_ids,
-        })
     while True:
         body = {
             "filterGroups": [{"filters": filters}],
             "sorts": [{"propertyName": "hs_createdate", "direction": "ASCENDING"}],
             "properties": ["hs_createdate", "hubspot_owner_id",
-                           "hs_meeting_start_time"],
+                           "hs_meeting_start_time", "hs_created_by_user_id"],
             "limit": 100,
         }
         if after: body["after"] = after
@@ -205,12 +208,13 @@ def search_meetings_window(start_dt, end_dt, owner_ids):
         for r in data.get("results", []):
             p = r.get("properties", {})
             created = p.get("hs_createdate")
-            oid = p.get("hubspot_owner_id")
+            created_by = p.get("hs_created_by_user_id") or ""
             start_time = p.get("hs_meeting_start_time")
-            if created and oid:
+            if created:
                 rows.append({
                     "created": created,
-                    "owner_id": str(oid),
+                    "created_by_user_id": str(created_by),
+                    "owner_id": str(p.get("hubspot_owner_id") or ""),
                     "start_time": start_time or "",
                 })
         after = data.get("paging", {}).get("next", {}).get("after")
@@ -225,8 +229,8 @@ def main():
     start_all = now_utc - timedelta(days=LOOKBACK_DAYS)
 
     print("Fetching owners…", flush=True)
-    owners = fetch_owners()
-    print(f"  {len(owners)} owners\n", flush=True)
+    owners, users = fetch_owners()
+    print(f"  {len(owners)} owners, {len(users)} user-ID mappings\n", flush=True)
 
     owner_ids = []
     if REP_NAMES:
@@ -237,6 +241,9 @@ def main():
             sys.exit("ERROR: none of REP_NAMES resolved to owner IDs. Aborting.")
     else:
         print("No REP_NAMES set — fetching all reps\n", flush=True)
+
+    # Build set of allowed rep names for meeting filtering
+    allowed_names = {n.strip().lower() for n in REP_NAMES} if REP_NAMES else None
 
     # ── Fetch calls ──
     print(f"Fetching calls in {CHUNK_DAYS}-day windows from "
@@ -277,6 +284,8 @@ def main():
         })
 
     # ── Fetch meetings (last 90 days only — enough for Pipeline Gen Day) ──
+    # Meetings are fetched WITHOUT owner filter because we attribute them to the
+    # CREATOR (hs_created_by_user_id), not the owner.
     meeting_lookback = min(LOOKBACK_DAYS, 90)
     meeting_start = now_utc - timedelta(days=meeting_lookback)
     print(f"\nFetching meetings created in last {meeting_lookback} days…", flush=True)
@@ -284,7 +293,7 @@ def main():
     window_start = meeting_start
     while window_start < now_utc:
         window_end = min(window_start + timedelta(days=CHUNK_DAYS), now_utc)
-        batch = search_meetings_window(window_start, window_end, owner_ids)
+        batch = search_meetings_window(window_start, window_end)
         print(f"  {window_start.date()} → {window_end.date()}: {len(batch)} meetings",
               flush=True)
         all_meetings_raw.extend(batch)
@@ -292,10 +301,23 @@ def main():
     print(f"Total raw meetings: {len(all_meetings_raw)}", flush=True)
 
     out_meetings = []
+    skipped_meetings_no_creator = 0
+    skipped_meetings_not_rep = 0
     for m in all_meetings_raw:
-        name = owners.get(m["owner_id"])
+        # Attribute to creator first, fall back to owner
+        creator_uid = m.get("created_by_user_id", "")
+        name = users.get(creator_uid) if creator_uid else None
         if not name:
+            # Fall back to owner_id
+            name = owners.get(m.get("owner_id", ""))
+        if not name:
+            skipped_meetings_no_creator += 1
             continue
+        # If filtering by rep names, skip meetings not created by our reps
+        if allowed_names and name.strip().lower() not in allowed_names:
+            skipped_meetings_not_rep += 1
+            continue
+
         try:
             created_utc = datetime.fromisoformat(m["created"].replace("Z", "+00:00"))
         except ValueError:
@@ -316,6 +338,10 @@ def main():
             "meeting_date": meeting_date,
             "rep": name,
         })
+
+    print(f"  Kept {len(out_meetings)} meetings "
+          f"(skipped {skipped_meetings_no_creator} no-creator, "
+          f"{skipped_meetings_not_rep} not-in-rep-list)", flush=True)
 
     # ── Write output ──
     payload = {
