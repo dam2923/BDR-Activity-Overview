@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 """
-Fetch HubSpot call activity via /crm/v3/objects/calls/search and write
+Fetch HubSpot call activity + meetings via v3 search endpoints and write
 data/data.json in the shape the dashboard expects:
 
 {
   "generated_at": "...",
-  "rows": [{"date": "YYYY-MM-DD", "rep": "First Last"}, ...]
+  "rows": [{"date": "YYYY-MM-DD", "rep": "Name", "dur": 45, "disp": "connected"}, ...],
+  "meetings": [{"booked_date": "YYYY-MM-DD", "meeting_date": "YYYY-MM-DD", "rep": "Name"}, ...],
+  "stats": { ... }
 }
 
-Filters applied:
-- Only calls owned by the reps listed in REP_NAMES (names → owner IDs resolved at runtime)
-- Only calls within the last LOOKBACK_DAYS days (default 420 ~ 14 months)
-- Only weekdays (Mon-Fri) in the configured TIMEZONE
+rows[]  — one entry per call. `dur` is duration in seconds, `disp` is disposition label.
+meetings[] — one entry per meeting engagement. `booked_date` is when it was created,
+             `meeting_date` is the scheduled start (used for the 3-week rule on Pipeline Gen Day).
 
 Required HubSpot Private App scopes:
   - crm.objects.contacts.read  (grants v3 calls search on this portal)
@@ -21,7 +22,6 @@ Required env:
   HUBSPOT_TOKEN
 Optional env:
   REP_NAMES       Comma-separated list of owner full names (exact match) to include.
-                  If empty, no owner filter is applied (pulls all reps).
   LOOKBACK_DAYS   Default "420"
   TIMEZONE        IANA name, default "UTC"
   CHUNK_DAYS      Window size for search pagination, default "28"
@@ -117,7 +117,6 @@ def resolve_rep_ids(owners_by_id, rep_names):
             print(f"  ✗ {name}  →  NOT FOUND in /crm/v3/owners")
     if missing:
         print(f"\n  Warning: {len(missing)} rep name(s) didn't match any HubSpot owner.")
-        print(f"  Check for typos or differences in capitalization/hyphens/spacing.")
     return ids
 
 
@@ -125,9 +124,10 @@ def iso_ms(dt):
     return dt.strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
 
+# ── Calls ────────────────────────────────────────────────────────────
+
 def search_calls_window(start_dt, end_dt, owner_ids):
-    """Paginate /crm/v3/objects/calls/search for a date window, optionally filtered
-    to a specific set of owner IDs."""
+    """Paginate /crm/v3/objects/calls/search for a date window."""
     rows = []
     after = None
     filters = [
@@ -144,7 +144,8 @@ def search_calls_window(start_dt, end_dt, owner_ids):
         body = {
             "filterGroups": [{"filters": filters}],
             "sorts": [{"propertyName": "hs_timestamp", "direction": "ASCENDING"}],
-            "properties": ["hs_timestamp", "hubspot_owner_id"],
+            "properties": ["hs_timestamp", "hubspot_owner_id",
+                           "hs_call_duration", "hs_call_disposition"],
             "limit": 100,
         }
         if after: body["after"] = after
@@ -152,17 +153,72 @@ def search_calls_window(start_dt, end_dt, owner_ids):
         total = data.get("total", 0)
         if total > SEARCH_CAP:
             print(f"  ⚠ window {start_dt.date()}→{end_dt.date()} has {total} calls "
-                  f"(> {SEARCH_CAP} cap). Shrink CHUNK_DAYS to avoid truncation.", file=sys.stderr)
+                  f"(> {SEARCH_CAP} cap). Shrink CHUNK_DAYS.", file=sys.stderr)
         for r in data.get("results", []):
             p = r.get("properties", {})
             ts = p.get("hs_timestamp")
             oid = p.get("hubspot_owner_id")
             if ts and oid:
-                rows.append({"ts": ts, "owner_id": str(oid)})
+                # duration comes as milliseconds string from HubSpot
+                dur_raw = p.get("hs_call_duration") or "0"
+                try:
+                    dur_ms = int(dur_raw)
+                except (ValueError, TypeError):
+                    dur_ms = 0
+                rows.append({
+                    "ts": ts,
+                    "owner_id": str(oid),
+                    "dur_ms": dur_ms,
+                    "disp": (p.get("hs_call_disposition") or "").strip(),
+                })
         after = data.get("paging", {}).get("next", {}).get("after")
         if not after: break
     return rows
 
+
+# ── Meetings ─────────────────────────────────────────────────────────
+
+def search_meetings_window(start_dt, end_dt, owner_ids):
+    """Paginate /crm/v3/objects/meetings/search for meetings created in a window."""
+    rows = []
+    after = None
+    filters = [
+        {"propertyName": "hs_createdate", "operator": "GTE", "value": iso_ms(start_dt)},
+        {"propertyName": "hs_createdate", "operator": "LT",  "value": iso_ms(end_dt)},
+    ]
+    if owner_ids:
+        filters.append({
+            "propertyName": "hubspot_owner_id",
+            "operator": "IN",
+            "values": owner_ids,
+        })
+    while True:
+        body = {
+            "filterGroups": [{"filters": filters}],
+            "sorts": [{"propertyName": "hs_createdate", "direction": "ASCENDING"}],
+            "properties": ["hs_createdate", "hubspot_owner_id",
+                           "hs_meeting_start_time"],
+            "limit": 100,
+        }
+        if after: body["after"] = after
+        data = http_post(f"{BASE}/crm/v3/objects/meetings/search", body)
+        for r in data.get("results", []):
+            p = r.get("properties", {})
+            created = p.get("hs_createdate")
+            oid = p.get("hubspot_owner_id")
+            start_time = p.get("hs_meeting_start_time")
+            if created and oid:
+                rows.append({
+                    "created": created,
+                    "owner_id": str(oid),
+                    "start_time": start_time or "",
+                })
+        after = data.get("paging", {}).get("next", {}).get("after")
+        if not after: break
+    return rows
+
+
+# ── Main ─────────────────────────────────────────────────────────────
 
 def main():
     now_utc = datetime.now(timezone.utc)
@@ -182,6 +238,7 @@ def main():
     else:
         print("No REP_NAMES set — fetching all reps\n", flush=True)
 
+    # ── Fetch calls ──
     print(f"Fetching calls in {CHUNK_DAYS}-day windows from "
           f"{start_all.date()} to {now_utc.date()}…", flush=True)
     all_calls = []
@@ -211,19 +268,70 @@ def main():
         if dt_local.weekday() >= 5:
             skipped_weekend += 1
             continue
-        out_rows.append({"date": dt_local.strftime("%Y-%m-%d"), "rep": name})
+        dur_s = c["dur_ms"] // 1000  # milliseconds → seconds
+        out_rows.append({
+            "date": dt_local.strftime("%Y-%m-%d"),
+            "rep": name,
+            "dur": dur_s,
+            "disp": c["disp"],
+        })
 
+    # ── Fetch meetings (last 90 days only — enough for Pipeline Gen Day) ──
+    meeting_lookback = min(LOOKBACK_DAYS, 90)
+    meeting_start = now_utc - timedelta(days=meeting_lookback)
+    print(f"\nFetching meetings created in last {meeting_lookback} days…", flush=True)
+    all_meetings_raw = []
+    window_start = meeting_start
+    while window_start < now_utc:
+        window_end = min(window_start + timedelta(days=CHUNK_DAYS), now_utc)
+        batch = search_meetings_window(window_start, window_end, owner_ids)
+        print(f"  {window_start.date()} → {window_end.date()}: {len(batch)} meetings",
+              flush=True)
+        all_meetings_raw.extend(batch)
+        window_start = window_end
+    print(f"Total raw meetings: {len(all_meetings_raw)}", flush=True)
+
+    out_meetings = []
+    for m in all_meetings_raw:
+        name = owners.get(m["owner_id"])
+        if not name:
+            continue
+        try:
+            created_utc = datetime.fromisoformat(m["created"].replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        created_local = created_utc.astimezone(TZ)
+        booked_date = created_local.strftime("%Y-%m-%d")
+
+        meeting_date = ""
+        if m["start_time"]:
+            try:
+                mt_utc = datetime.fromisoformat(m["start_time"].replace("Z", "+00:00"))
+                meeting_date = mt_utc.astimezone(TZ).strftime("%Y-%m-%d")
+            except ValueError:
+                pass
+
+        out_meetings.append({
+            "booked_date": booked_date,
+            "meeting_date": meeting_date,
+            "rep": name,
+        })
+
+    # ── Write output ──
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "timezone": TZ_NAME,
         "lookback_days": LOOKBACK_DAYS,
         "reps_filter": REP_NAMES or None,
         "rows": out_rows,
+        "meetings": out_meetings,
         "stats": {
             "raw_calls": len(all_calls),
             "kept": len(out_rows),
             "skipped_no_owner": skipped_no_owner,
             "skipped_weekend": skipped_weekend,
+            "raw_meetings": len(all_meetings_raw),
+            "kept_meetings": len(out_meetings),
         },
     }
     out_path = os.path.abspath(
@@ -232,7 +340,7 @@ def main():
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with open(out_path, "w") as f:
         json.dump(payload, f)
-    print(f"\nWrote {out_path} with {len(out_rows)} rows")
+    print(f"\nWrote {out_path} with {len(out_rows)} call rows + {len(out_meetings)} meetings")
     print(f"Stats: {payload['stats']}")
 
 
