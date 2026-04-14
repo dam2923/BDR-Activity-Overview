@@ -3,12 +3,13 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Call Activity by Rep</title>
+<title>Call Activity Dashboard</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
   :root{
     --bg:#0b1220; --panel:#121a2b; --panel2:#182339; --text:#e8ecf5;
     --muted:#94a3b8; --accent:#60a5fa; --border:#223049;
+    --gold:#fbbf24; --silver:#94a3b8; --bronze:#cd7f32;
   }
   *{box-sizing:border-box}
   html,body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
@@ -49,128 +50,237 @@
   .btn.on{border-color:var(--accent);background:#1e3a66}
   .rng{color:var(--muted);font-size:12px;margin-left:8px}
   .banner{background:#3b1d1d;border:1px solid #7a2e2e;color:#fecaca;padding:10px 14px;border-radius:10px;font-size:13px;margin-bottom:12px;display:none}
+
+  /* Tabs */
+  .tabs{display:flex;gap:4px;margin-bottom:16px}
+  .tab{background:var(--panel2);border:1px solid var(--border);color:var(--muted);padding:10px 20px;border-radius:10px 10px 0 0;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .12s}
+  .tab:hover{color:var(--text);border-color:var(--accent)}
+  .tab.active{background:var(--panel);color:var(--text);border-color:var(--accent);border-bottom-color:var(--panel)}
+  .tab-panel{display:none}
+  .tab-panel.active{display:block}
+
+  /* Select dropdown styling */
+  select.ctrl{background:var(--panel2);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:8px;font-size:12px;font-family:inherit;cursor:pointer;color-scheme:dark}
+  select.ctrl:hover{border-color:var(--accent)}
+
+  /* Header controls row */
+  .header-controls{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:4px}
+  .header-controls .label{color:var(--muted);font-size:12px}
+
+  /* Leaderboard */
+  .lb-card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:24px;margin-top:16px}
+  .lb-row{display:flex;align-items:center;gap:16px;padding:16px;border-radius:12px;margin-bottom:8px;background:var(--panel2);border:1px solid var(--border);transition:all .15s}
+  .lb-row:hover{border-color:var(--accent)}
+  .lb-rank{font-size:28px;font-weight:800;min-width:48px;text-align:center}
+  .lb-rank.gold{color:var(--gold)}
+  .lb-rank.silver{color:var(--silver)}
+  .lb-rank.bronze{color:var(--bronze)}
+  .lb-name{font-size:18px;font-weight:700;flex:1;min-width:0}
+  .lb-team-badge{font-size:11px;padding:3px 8px;border-radius:999px;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+  .lb-team-badge.bdr{background:#1e3a66;color:#60a5fa}
+  .lb-team-badge.ae{background:#1a3329;color:#34d399}
+  .lb-stats{display:flex;gap:20px;align-items:center}
+  .lb-stat{text-align:center}
+  .lb-stat .v{font-size:18px;font-weight:700}
+  .lb-stat .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
+  .lb-points{font-size:32px;font-weight:800;color:var(--accent);min-width:80px;text-align:right}
+  .lb-points-label{font-size:11px;color:var(--muted);text-transform:uppercase;text-align:right}
+  .lb-empty{color:var(--muted);text-align:center;padding:40px;font-size:15px}
+
+  /* Pipeline Gen Day header */
+  .pgd-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px}
+  .pgd-title{font-size:22px;font-weight:700}
+  .pgd-subtitle{color:var(--muted);font-size:13px;margin-top:2px}
+  .pgd-rules{background:var(--panel2);border:1px solid var(--border);border-radius:10px;padding:14px 18px;font-size:13px;color:var(--muted);margin-bottom:20px;line-height:1.6}
+  .pgd-rules strong{color:var(--text)}
+
+  @media(max-width:700px){
+    .lb-stats{flex-direction:column;gap:8px}
+    .lb-row{flex-wrap:wrap;gap:10px}
+    .lb-points{text-align:left}
+  }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
     <div>
-      <h1>Call Activity by Rep</h1>
-      <div class="sub">Daily + weekly view · weekends &amp; UK bank holidays excluded · refreshes nightly from HubSpot <span style="opacity:.5">· v5</span></div>
+      <h1>Call Activity Dashboard</h1>
+      <div class="sub">Weekends &amp; UK bank holidays excluded · refreshes from HubSpot <span style="opacity:.5">· v6</span></div>
     </div>
-    <div class="updated" id="updated"></div>
+    <div style="text-align:right">
+      <div class="updated" id="updated"></div>
+      <div class="header-controls">
+        <span class="label">Team</span>
+        <select class="ctrl" id="teamFilter">
+          <option value="all">All</option>
+          <option value="BDR">BDRs</option>
+          <option value="AE">AEs</option>
+        </select>
+        <span class="label" style="margin-left:8px">Auto-refresh</span>
+        <select class="ctrl" id="refreshRate">
+          <option value="0">Off (daily)</option>
+          <option value="300">Every 5 min</option>
+        </select>
+      </div>
+    </div>
   </header>
 
   <div class="banner" id="banner"></div>
 
-  <div class="card">
-    <div class="filters" id="dateFilters">
-      <span class="label">Date range</span>
-      <button class="btn" data-preset="7">Last 7 days</button>
-      <button class="btn" data-preset="30">Last 30 days</button>
-      <button class="btn" data-preset="90">Last 90 days</button>
-      <button class="btn on" data-preset="qtd">This quarter</button>
-      <button class="btn" data-preset="lastq">Last quarter</button>
-      <button class="btn" data-preset="6m">Last 6 months</button>
-      <button class="btn" data-preset="ytd">YTD</button>
-      <button class="btn" data-preset="all">All</button>
-    </div>
-    <div class="datewrap">
-      <span class="label">Custom</span>
-      <input type="date" id="fromDate" />
-      <span style="color:var(--muted)">to</span>
-      <input type="date" id="toDate" />
-      <button class="btn" id="applyCustom">Apply</button>
-      <span class="rng" id="rangeLabel"></span>
-    </div>
+  <div class="tabs">
+    <button class="tab active" data-tab="calls">Call Activity</button>
+    <button class="tab" data-tab="pipeline">Pipeline Generation Day</button>
+  </div>
 
-    <div class="section-divider"></div>
+  <!-- ========== TAB 1: CALL ACTIVITY ========== -->
+  <div class="tab-panel active" id="tab-calls">
+    <div class="card">
+      <div class="filters" id="dateFilters">
+        <span class="label">Date range</span>
+        <button class="btn" data-preset="7">Last 7 days</button>
+        <button class="btn" data-preset="30">Last 30 days</button>
+        <button class="btn" data-preset="90">Last 90 days</button>
+        <button class="btn on" data-preset="qtd">This quarter</button>
+        <button class="btn" data-preset="lastq">Last quarter</button>
+        <button class="btn" data-preset="6m">Last 6 months</button>
+        <button class="btn" data-preset="ytd">YTD</button>
+        <button class="btn" data-preset="all">All</button>
+      </div>
+      <div class="datewrap">
+        <span class="label">Custom</span>
+        <input type="date" id="fromDate" />
+        <span style="color:var(--muted)">to</span>
+        <input type="date" id="toDate" />
+        <button class="btn" id="applyCustom">Apply</button>
+        <span class="rng" id="rangeLabel"></span>
+      </div>
 
-    <div class="filters" id="filters">
-      <span class="label">Reps</span>
-      <span style="flex:1"></span>
-      <div class="toolbar">
-        <button class="btn" id="all">All</button>
-        <button class="btn" id="none">None</button>
+      <div class="section-divider"></div>
+
+      <div class="filters" id="filters">
+        <span class="label">Reps</span>
+        <span style="flex:1"></span>
+        <div class="toolbar">
+          <button class="btn" id="all">All</button>
+          <button class="btn" id="none">None</button>
+        </div>
+      </div>
+
+      <div class="kpis" id="kpis"></div>
+
+      <div class="row two" style="margin-top:20px">
+        <div class="card" style="background:var(--panel2)">
+          <h3>Daily calls by rep (weekdays only)</h3>
+          <div class="chart-wrap"><canvas id="daily"></canvas></div>
+        </div>
+        <div class="card" style="background:var(--panel2)">
+          <h3>Weekly calls by rep (Monday week-start)</h3>
+          <div class="chart-wrap"><canvas id="weekly"></canvas></div>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:20px">
+        <div class="card" style="background:var(--panel2);overflow-x:auto">
+          <h3>Weekly summary</h3>
+          <table id="weeklyTable"></table>
+        </div>
+      </div>
+
+      <div class="foot" id="foot">Source: HubSpot Engagements, filtered by Activity Assigned To.</div>
+    </div>
+  </div>
+
+  <!-- ========== TAB 2: PIPELINE GENERATION DAY ========== -->
+  <div class="tab-panel" id="tab-pipeline">
+    <div class="pgd-rules">
+      <strong>Scoring:</strong> Connected call (15s+, not voicemail) = <strong>1 point</strong> · Meeting booked (within next 3 weeks) = <strong>20 points</strong>
+    </div>
+    <div class="pgd-header">
+      <div>
+        <div class="pgd-title" id="pgdTitle">Leaderboard</div>
+        <div class="pgd-subtitle" id="pgdSubtitle"></div>
       </div>
     </div>
-
-    <div class="kpis" id="kpis"></div>
-
-    <div class="row two" style="margin-top:20px">
-      <div class="card" style="background:var(--panel2)">
-        <h3>Daily calls by rep (weekdays only)</h3>
-        <div class="chart-wrap"><canvas id="daily"></canvas></div>
-      </div>
-      <div class="card" style="background:var(--panel2)">
-        <h3>Weekly calls by rep (Monday week-start)</h3>
-        <div class="chart-wrap"><canvas id="weekly"></canvas></div>
-      </div>
-    </div>
-
-    <div class="row" style="margin-top:20px">
-      <div class="card" style="background:var(--panel2);overflow-x:auto">
-        <h3>Weekly summary</h3>
-        <table id="weeklyTable"></table>
-      </div>
-    </div>
-
-    <div class="foot" id="foot">Source: HubSpot Engagements → Calls, filtered by Activity Assigned To.</div>
+    <div id="leaderboard"></div>
   </div>
 </div>
 
 <script>
-// Configure rep colors here. Names must match Activity Assigned To exactly
-// (HubSpot owner full name: "First Last"). Reps returned by the fetch but
-// not listed here will be ignored; reps listed here but absent from the
-// data will show as zero.
+// ---------- Rep configuration ----------
+// team: "BDR" or "AE"
 const REPS = [
-  { name: "Tyreek Burke",         color: "#60a5fa" },
-  { name: "Jennifer Fasida",      color: "#f472b6" },
-  { name: "Liam Bolger-Prentice", color: "#34d399" },
-  { name: "Zoe Cornelius",        color: "#fbbf24" },
-  { name: "Miles Smith",          color: "#a78bfa" },
+  // BDRs
+  { name: "Tyreek Burke",         color: "#60a5fa", team: "BDR" },
+  { name: "Jennifer Fasida",      color: "#f472b6", team: "BDR" },
+  { name: "Liam Bolger-Prentice", color: "#34d399", team: "BDR" },
+  { name: "Zoe Cornelius",        color: "#fbbf24", team: "BDR" },
+  { name: "Miles Smith",          color: "#a78bfa", team: "BDR" },
+  // AEs
+  { name: "George Watson",        color: "#fb923c", team: "AE" },
+  { name: "Henry McCloskey",      color: "#38bdf8", team: "AE" },
+  { name: "Hamid Abusibah",       color: "#4ade80", team: "AE" },
+  { name: "Nathan Brown",         color: "#e879f9", team: "AE" },
+  { name: "Darien Bryan",         color: "#f87171", team: "AE" },
 ];
 
-// UK bank holidays (England & Wales) — dates excluded from daily view and
-// from weekly roll-ups, same treatment as weekends. Add more years as needed.
+// UK bank holidays (England & Wales)
 const BANK_HOLIDAYS = new Set([
   // 2026
-  "2026-01-01", // New Year's Day
-  "2026-04-03", // Good Friday
-  "2026-04-06", // Easter Monday
-  "2026-05-04", // Early May bank holiday
-  "2026-05-25", // Spring bank holiday
-  "2026-08-31", // Summer bank holiday
-  "2026-12-25", // Christmas Day
-  "2026-12-28", // Boxing Day (substitute — 26 Dec falls on a Saturday)
+  "2026-01-01", "2026-04-03", "2026-04-06", "2026-05-04",
+  "2026-05-25", "2026-08-31", "2026-12-25", "2026-12-28",
   // 2027
-  "2027-01-01",
-  "2027-03-26", // Good Friday
-  "2027-03-29", // Easter Monday
-  "2027-05-03",
-  "2027-05-31",
-  "2027-08-30",
-  "2027-12-27", // Christmas Day (substitute)
-  "2027-12-28", // Boxing Day (substitute)
+  "2027-01-01", "2027-03-26", "2027-03-29", "2027-05-03",
+  "2027-05-31", "2027-08-30", "2027-12-27", "2027-12-28",
 ]);
 
-// ---------- Load data.json ----------
-let RAW = null;   // { rows: [{date:"YYYY-MM-DD", rep:"Name"}, ...], generated_at: "ISO" }
+// ---------- State ----------
+let RAW = null;
 let allDays = [];
-let allData = {}; // rep -> array aligned to allDays
+let allData = {};
+let currentTeam = "all";
+let refreshTimer = null;
 
 const banner = document.getElementById("banner");
 function showBanner(msg){ banner.style.display="block"; banner.textContent = msg }
 
-fetch("data/data.json?t=" + Date.now(), {cache:"no-store"})
-  .then(r => { if(!r.ok) throw new Error("data.json not found"); return r.json() })
-  .then(d => { RAW = d; build(); })
-  .catch(err => {
-    showBanner("Could not load data/data.json — showing empty dashboard. First run of the GitHub Action will populate it.");
-    RAW = { rows: [], generated_at: null };
-    build();
+// ---------- Tab switching ----------
+document.querySelectorAll(".tab").forEach(tab=>{
+  tab.addEventListener("click",()=>{
+    document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+    document.querySelectorAll(".tab-panel").forEach(p=>p.classList.remove("active"));
+    tab.classList.add("active");
+    document.getElementById("tab-"+tab.dataset.tab).classList.add("active");
   });
+});
+
+// ---------- Team filter ----------
+document.getElementById("teamFilter").addEventListener("change",(e)=>{
+  currentTeam = e.target.value;
+  if(RAW){ build(); }
+});
+
+// ---------- Refresh rate ----------
+document.getElementById("refreshRate").addEventListener("change",(e)=>{
+  const secs = parseInt(e.target.value);
+  if(refreshTimer){ clearInterval(refreshTimer); refreshTimer = null; }
+  if(secs > 0){
+    refreshTimer = setInterval(()=> loadData(), secs * 1000);
+  }
+});
+
+// ---------- Load data ----------
+function loadData(){
+  fetch("data/data.json?t=" + Date.now(), {cache:"no-store"})
+    .then(r => { if(!r.ok) throw new Error("data.json not found"); return r.json() })
+    .then(d => { RAW = d; build(); buildLeaderboard(); })
+    .catch(err => {
+      showBanner("Could not load data/data.json — showing empty dashboard.");
+      RAW = { rows: [], meetings: [], generated_at: null };
+      build(); buildLeaderboard();
+    });
+}
+loadData();
 
 function iso(d){
   const x = new Date(d);
@@ -180,31 +290,36 @@ function iso(d){
   return `${y}-${m}-${dd}`;
 }
 
+function getVisibleReps(){
+  if(currentTeam === "all") return REPS;
+  return REPS.filter(r => r.team === currentTeam);
+}
+
 function build(){
-  // Build counts per (date, rep) — already filtered server-side to Calls, non-blank rep, weekdays only.
-  const counts = {}; // "YYYY-MM-DD" -> rep -> count
+  const visibleReps = getVisibleReps();
+  const visibleNames = new Set(visibleReps.map(r=>r.name));
+
+  const counts = {};
   let minDate=null, maxDate=null;
   RAW.rows.forEach(row=>{
     const d = row.date; const r = row.rep;
+    if(!visibleNames.has(r)) return;
     if(!counts[d]) counts[d]={};
     counts[d][r] = (counts[d][r]||0) + 1;
     if(!minDate||d<minDate) minDate=d;
     if(!maxDate||d>maxDate) maxDate=d;
   });
 
-  // Fallback range if no data
   if(!minDate){
     const t = new Date(); t.setHours(0,0,0,0);
     const s = new Date(t); s.setDate(t.getDate()-30);
     minDate = iso(s); maxDate = iso(t);
   }
 
-  // Always extend the axis through today so zero-activity days still appear
   const todayIso = iso(new Date());
   if(todayIso > maxDate) maxDate = todayIso;
 
-  // Build allDays: every weekday between min and max, excluding UK bank holidays.
-  // Iterate in UTC so DST transitions don't shift `d` past `endD` on the final day.
+  // Build allDays in UTC to avoid DST bugs
   allDays = [];
   const d = new Date(minDate + "T00:00:00Z");
   const endD = new Date(maxDate + "T00:00:00Z");
@@ -218,15 +333,13 @@ function build(){
     d.setUTCDate(d.getUTCDate()+1);
   }
 
-  // Fill series per configured rep
   allData = {};
-  REPS.forEach(r=>{
+  visibleReps.forEach(r=>{
     allData[r.name] = allDays.map(day=>{
       const c = counts[iso(day)]; return c ? (c[r.name]||0) : 0;
     });
   });
 
-  // updated label
   const updEl = document.getElementById("updated");
   if(RAW.generated_at){
     const dt = new Date(RAW.generated_at);
@@ -235,12 +348,10 @@ function build(){
     updEl.textContent = "Not yet refreshed";
   }
 
-  // initial range
   rangeStart = allDays[0] || new Date();
   rangeEnd   = allDays[allDays.length-1] || new Date();
 
   mountFilters();
-  // default preset
   applyPreset("qtd");
 }
 
@@ -250,7 +361,6 @@ let rangeStart, rangeEnd;
 
 const fmtShort = d => d.toLocaleDateString(undefined,{month:"short",day:"numeric"});
 const fmtWithYear = d => d.toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"});
-const fmtFull = d => d.toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric",year:"numeric"});
 
 function mondayOf(date){
   const x = new Date(date); const day = (x.getDay()+6)%7; x.setDate(x.getDate()-day); x.setHours(0,0,0,0); return x;
@@ -278,13 +388,14 @@ function applyPreset(key){
 }
 
 function mountFilters(){
+  const visibleReps = getVisibleReps();
   const filtersEl = document.getElementById("filters");
-  // Clear previously injected chips (if any)
   filtersEl.querySelectorAll(".chip").forEach(c=>c.remove());
-  REPS.forEach(r=>{
+  visibleReps.forEach(r=>{
+    const isOn = activeReps.has(r.name);
     const chip = document.createElement("label");
-    chip.className="chip on";
-    chip.innerHTML = `<span class="pill" style="background:${r.color}"></span><input type="checkbox" checked>${r.name}`;
+    chip.className = "chip " + (isOn ? "on" : "off");
+    chip.innerHTML = `<span class="pill" style="background:${r.color}"></span><input type="checkbox" ${isOn?"checked":""}><span>${r.name}</span><span class="lb-team-badge ${r.team.toLowerCase()}" style="font-size:10px;padding:2px 6px">${r.team}</span>`;
     chip.querySelector("input").addEventListener("change",(e)=>{
       if(e.target.checked){activeReps.add(r.name);chip.classList.add("on");chip.classList.remove("off")}
       else{activeReps.delete(r.name);chip.classList.remove("on");chip.classList.add("off")}
@@ -293,12 +404,12 @@ function mountFilters(){
     filtersEl.insertBefore(chip, filtersEl.children[filtersEl.children.length-2]);
   });
   document.getElementById("all").onclick=()=>{
-    activeReps.clear(); REPS.forEach(r=>activeReps.add(r.name));
+    activeReps.clear(); getVisibleReps().forEach(r=>activeReps.add(r.name));
     filtersEl.querySelectorAll(".chip").forEach(c=>{c.classList.add("on");c.classList.remove("off");c.querySelector("input").checked=true});
     render();
   };
   document.getElementById("none").onclick=()=>{
-    activeReps.clear();
+    getVisibleReps().forEach(r=>activeReps.delete(r.name));
     filtersEl.querySelectorAll(".chip").forEach(c=>{c.classList.remove("on");c.classList.add("off");c.querySelector("input").checked=false});
     render();
   };
@@ -331,13 +442,14 @@ const weeklyCtx = document.getElementById("weekly");
 let dailyChart, weeklyChart;
 
 function render(){
+  const visibleReps = getVisibleReps();
   const idxs = [];
   const days = [];
   allDays.forEach((d,i)=>{
     if(d>=rangeStart && d<=rangeEnd){ idxs.push(i); days.push(d) }
   });
   const data = {};
-  REPS.forEach(r=>{ data[r.name] = idxs.map(i=>allData[r.name][i]) });
+  visibleReps.forEach(r=>{ if(allData[r.name]) data[r.name] = idxs.map(i=>allData[r.name][i]) });
 
   const weeks = [];
   days.forEach(day=>{
@@ -346,7 +458,8 @@ function render(){
     weeks[weeks.length-1].days.push(day);
   });
   const weeklyData = {};
-  REPS.forEach(r=>{
+  visibleReps.forEach(r=>{
+    if(!data[r.name]) return;
     weeklyData[r.name] = weeks.map(w=>{
       let total=0;
       w.days.forEach(dy=>{
@@ -361,7 +474,7 @@ function render(){
     days.length ? `${fmtWithYear(days[0])} — ${fmtWithYear(days[days.length-1])} · ${days.length} weekdays`
                 : "No days in range";
 
-  const shown = REPS.filter(r=>activeReps.has(r.name));
+  const shown = visibleReps.filter(r=>activeReps.has(r.name) && data[r.name]);
   let totalCalls=0, totalRepDays=0, best={name:"—",v:0};
   shown.forEach(r=>{
     const s = data[r.name];
@@ -430,10 +543,103 @@ function render(){
     const origIndex = weeks.indexOf(w);
     let rowTotal=0;
     html+=`<tr><td>${fmtWithYear(new Date(w.key))}</td>`;
-    shown.forEach(r=>{ const v=weeklyData[r.name][origIndex]; rowTotal+=v; html+=`<td>${v}</td>` });
+    shown.forEach(r=>{ const v=(weeklyData[r.name]||[])[origIndex]||0; rowTotal+=v; html+=`<td>${v}</td>` });
     html+=`<td><strong>${rowTotal}</strong></td></tr>`;
   });
   html+="</tbody>"; t.innerHTML = html;
+}
+
+// ---------- Pipeline Generation Day Leaderboard ----------
+function buildLeaderboard(){
+  if(!RAW) return;
+  const todayStr = iso(new Date());
+  const visibleReps = getVisibleReps();
+  const visibleNames = new Set(visibleReps.map(r=>r.name));
+  const now = new Date();
+  const threeWeeks = new Date(now); threeWeeks.setDate(threeWeeks.getDate() + 21);
+
+  // Score connected calls today (duration >= 15s, not voicemail)
+  const callPoints = {};
+  const callCounts = {};
+  (RAW.rows || []).forEach(row=>{
+    if(row.date !== todayStr) return;
+    if(!visibleNames.has(row.rep)) return;
+    // Check if this row has detailed call info
+    const dur = row.dur || 0; // duration in seconds
+    const disp = (row.disp || "").toLowerCase();
+    // Must be >= 15 seconds and not a voicemail
+    if(dur >= 15 && !disp.includes("voicemail")){
+      callPoints[row.rep] = (callPoints[row.rep]||0) + 1;
+      callCounts[row.rep] = (callCounts[row.rep]||0) + 1;
+    }
+  });
+
+  // Score meetings booked today with meeting_date within 3 weeks
+  const meetingPoints = {};
+  const meetingCounts = {};
+  (RAW.meetings || []).forEach(m=>{
+    if(m.booked_date !== todayStr) return;
+    if(!visibleNames.has(m.rep)) return;
+    // Check meeting_date is within 3 weeks
+    const mtgDate = new Date(m.meeting_date + "T00:00:00");
+    if(mtgDate >= now && mtgDate <= threeWeeks){
+      meetingPoints[m.rep] = (meetingPoints[m.rep]||0) + 20;
+      meetingCounts[m.rep] = (meetingCounts[m.rep]||0) + 1;
+    }
+  });
+
+  // Build leaderboard
+  const board = visibleReps.map(r=>{
+    const calls = callCounts[r.name] || 0;
+    const meetings = meetingCounts[r.name] || 0;
+    const pts = (callPoints[r.name]||0) + (meetingPoints[r.name]||0);
+    return { name: r.name, team: r.team, color: r.color, calls, meetings, pts };
+  }).sort((a,b) => b.pts - a.pts || b.calls - a.calls);
+
+  // Subtitle
+  const sub = document.getElementById("pgdSubtitle");
+  const dateOpts = {weekday:"long", day:"numeric", month:"long", year:"numeric"};
+  sub.textContent = new Date().toLocaleDateString(undefined, dateOpts);
+  if(RAW.generated_at){
+    const dt = new Date(RAW.generated_at);
+    sub.textContent += " · Data as of " + dt.toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"});
+  }
+
+  // Render
+  const el = document.getElementById("leaderboard");
+  if(board.every(b => b.pts === 0)){
+    el.innerHTML = `<div class="lb-empty">No qualifying activity yet today. Connected calls (15s+) earn 1 point, meetings booked (within 3 weeks) earn 20 points.</div>`;
+    return;
+  }
+
+  let html = "";
+  board.forEach((b,i)=>{
+    const rankClass = i===0 ? "gold" : i===1 ? "silver" : i===2 ? "bronze" : "";
+    const medal = i===0 ? "&#x1F947;" : i===1 ? "&#x1F948;" : i===2 ? "&#x1F949;" : "";
+    html += `
+      <div class="lb-row">
+        <div class="lb-rank ${rankClass}">${medal || (i+1)}</div>
+        <div class="lb-name">
+          ${b.name}
+          <span class="lb-team-badge ${b.team.toLowerCase()}">${b.team}</span>
+        </div>
+        <div class="lb-stats">
+          <div class="lb-stat">
+            <div class="v">${b.calls}</div>
+            <div class="l">Calls (${b.calls} pts)</div>
+          </div>
+          <div class="lb-stat">
+            <div class="v">${b.meetings}</div>
+            <div class="l">Meetings (${b.meetings * 20} pts)</div>
+          </div>
+        </div>
+        <div>
+          <div class="lb-points">${b.pts}</div>
+          <div class="lb-points-label">points</div>
+        </div>
+      </div>`;
+  });
+  el.innerHTML = html;
 }
 </script>
 </body>
