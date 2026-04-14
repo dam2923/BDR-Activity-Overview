@@ -1,0 +1,54 @@
+name: "Fast refresh (Pipeline Gen Day)"
+
+# Runs every 5 minutes. DISABLED by default — enable it in the Actions tab
+# on Pipeline Generation Days, then disable it again when the day is over.
+#
+# To enable:  Actions → "Fast refresh (Pipeline Gen Day)" → ••• → Enable workflow
+# To disable: Actions → "Fast refresh (Pipeline Gen Day)" → ••• → Disable workflow
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"    # every 5 minutes
+  workflow_dispatch: {}       # manual trigger
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Fetch HubSpot data
+        env:
+          HUBSPOT_TOKEN: ${{ secrets.HUBSPOT_TOKEN }}
+          LOOKBACK_DAYS: "420"
+          TIMEZONE: "Europe/London"
+          REP_NAMES: "Tyreek Burke,Jennifer Fasida,Liam Bolger-Prentice,Zoe Cornelius,Miles Smith,George Watson,Henry McCloskey,Hamid Abusibah,Nathan Brown,Darien Bryan"
+        run: python scripts/fetch_hubspot.py
+
+      - name: Commit refreshed data
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/data.json
+          if git diff --staged --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "chore: fast refresh HubSpot data ($(date -u +%Y-%m-%dT%H:%M))"
+            git push
+          fi
