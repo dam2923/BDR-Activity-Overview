@@ -8,6 +8,7 @@
 <meta http-equiv="Expires" content="0" />
 <title>Call Activity Dashboard</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root{
     --bg:#0b1220; --panel:#121a2b; --panel2:#182339; --text:#e8ecf5;
@@ -287,6 +288,7 @@
         <div class="pgd-title" id="pgdTitle">Pipeline Generation Day</div>
         <div class="pgd-subtitle" id="pgdSubtitle"></div>
       </div>
+      <button class="tv-btn" id="downloadXlsx">&#x1F4E5; Download Excel</button>
       <button class="tv-btn" id="tvModeBtn">&#x1F4FA; TV Mode</button>
     </div>
 
@@ -405,13 +407,42 @@ document.getElementById("teamFilter").addEventListener("change",(e)=>{
 });
 
 // ---------- Refresh rate ----------
-document.getElementById("refreshRate").addEventListener("change",(e)=>{
-  const secs = parseInt(e.target.value);
+function setRefreshRate(secs){
   if(refreshTimer){ clearInterval(refreshTimer); refreshTimer = null; }
   if(secs > 0){
     refreshTimer = setInterval(()=> loadData(), secs * 1000);
   }
+  // Sync dropdown
+  const sel = document.getElementById("refreshRate");
+  sel.value = String(secs);
+}
+document.getElementById("refreshRate").addEventListener("change",(e)=>{
+  setRefreshRate(parseInt(e.target.value));
 });
+
+// ---------- URL parameters ----------
+// ?refresh=5  → auto-refresh every 5 min
+// ?tv=1      → go straight into TV mode on Pipeline tab
+// ?tab=pipeline → open Pipeline tab
+// Combine: ?tv=1&refresh=5
+const urlParams = new URLSearchParams(window.location.search);
+
+if(urlParams.has("refresh")){
+  const mins = parseInt(urlParams.get("refresh"));
+  if(mins > 0) setRefreshRate(mins * 60);
+}
+
+if(urlParams.get("tab") === "pipeline" || urlParams.has("tv")){
+  document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+  document.querySelectorAll(".tab-panel").forEach(p=>p.classList.remove("active"));
+  document.querySelector('[data-tab="pipeline"]').classList.add("active");
+  document.getElementById("tab-pipeline").classList.add("active");
+}
+
+if(urlParams.get("tv") === "1"){
+  // Small delay to let data load first, then enter TV mode
+  setTimeout(()=> enterTV(), 500);
+}
 
 // ---------- Load data ----------
 function loadData(){
@@ -831,7 +862,92 @@ function buildLeaderboard(){
       </div>`;
   });
   el.innerHTML = html;
+
+  // Store for Excel export
+  window._pgdBoard = board;
+  window._pgdTeamScores = teamScores;
 }
+
+// ---------- Excel Download ----------
+document.getElementById("downloadXlsx").addEventListener("click", ()=>{
+  if(!window._pgdBoard) return;
+  const board = window._pgdBoard;
+  const teamScores = window._pgdTeamScores;
+  const todayStr = iso(new Date());
+  const dateLabel = new Date().toLocaleDateString(undefined,{day:"numeric",month:"long",year:"numeric"});
+
+  const wb = XLSX.utils.book_new();
+
+  // ── Sheet 1: Individual Leaderboard ──
+  const repTeamMap = {};
+  PGD_TEAMS.forEach(t => t.members.forEach(m => { repTeamMap[m.rep] = t.name }));
+
+  const lbHeader = ["Rank", "Name", "Team", "PGD Team", "Connected Calls", "Call Points", "Meetings Booked", "Meeting Points", "Total Points"];
+  const lbRows = board.map((b, i) => [
+    i + 1,
+    b.name,
+    b.team,
+    repTeamMap[b.name] || "",
+    b.calls,
+    b.calls,
+    b.meetings,
+    b.meetings * 20,
+    b.pts
+  ]);
+  const lbData = [
+    ["Pipeline Generation Day — " + dateLabel],
+    [],
+    ["Individual Leaderboard"],
+    lbHeader,
+    ...lbRows,
+  ];
+  const ws1 = XLSX.utils.aoa_to_sheet(lbData);
+
+  // Column widths
+  ws1["!cols"] = [
+    {wch: 6}, {wch: 28}, {wch: 6}, {wch: 12},
+    {wch: 16}, {wch: 12}, {wch: 18}, {wch: 15}, {wch: 14}
+  ];
+  XLSX.utils.book_append_sheet(wb, ws1, "Leaderboard");
+
+  // ── Sheet 2: Team Summary ──
+  const teamRows = [
+    ["Pipeline Generation Day — " + dateLabel],
+    [],
+    ["Team Summary"],
+    ["Team", "Total Points", "Connected Calls", "Call Points", "Meetings Booked", "Meeting Points"],
+  ];
+  PGD_TEAMS.forEach(t => {
+    const sc = teamScores[t.name];
+    teamRows.push([
+      "Team " + t.name,
+      sc.pts,
+      sc.calls,
+      sc.calls,
+      sc.meetings,
+      sc.meetings * 20
+    ]);
+  });
+  teamRows.push([]);
+  teamRows.push(["Team Rosters"]);
+
+  PGD_TEAMS.forEach(t => {
+    teamRows.push([]);
+    teamRows.push(["Team " + t.name]);
+    teamRows.push(["Name", "Role", "Points"]);
+    t.members.forEach(m => {
+      const pb = board.find(b => b.name === m.rep);
+      teamRows.push([m.rep, m.role || "", pb ? pb.pts : 0]);
+    });
+  });
+
+  const ws2 = XLSX.utils.aoa_to_sheet(teamRows);
+  ws2["!cols"] = [{wch: 28}, {wch: 14}, {wch: 16}, {wch: 12}, {wch: 18}, {wch: 15}];
+  XLSX.utils.book_append_sheet(wb, ws2, "Teams");
+
+  // Download
+  XLSX.writeFile(wb, "Pipeline_Gen_Day_" + todayStr + ".xlsx");
+});
 </script>
 </body>
 </html>
