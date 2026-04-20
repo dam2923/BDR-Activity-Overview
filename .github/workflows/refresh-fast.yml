@@ -8,7 +8,7 @@ name: "Fast refresh (Pipeline Gen Day)"
 
 on:
   schedule:
-    - cron: "*/5 * * * *"    # every 5 minutes
+    - cron: "*/15 * * * *"   # every 15 minutes
   workflow_dispatch: {}       # manual trigger
 
 permissions:
