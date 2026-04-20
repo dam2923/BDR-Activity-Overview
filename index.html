@@ -225,6 +225,7 @@
     <div class="card">
       <div class="filters" id="dateFilters">
         <span class="label">Date range</span>
+        <button class="btn" data-preset="today">Today</button>
         <button class="btn" data-preset="7">Last 7 days</button>
         <button class="btn" data-preset="30">Last 30 days</button>
         <button class="btn" data-preset="90">Last 90 days</button>
@@ -548,7 +549,8 @@ function applyPreset(key){
   if(!allDays.length) return;
   const last = allDays[allDays.length-1];
   let s, e = last;
-  if(key==="7"){ s = addDays(last,-10) }
+  if(key==="today"){ const t = new Date(); t.setHours(0,0,0,0); s = t; e = t; }
+  else if(key==="7"){ s = addDays(last,-10) }
   else if(key==="30"){ s = addDays(last,-44) }
   else if(key==="90"){ s = addDays(last,-120) }
   else if(key==="qtd"){ s = quarterStart(last) }
@@ -733,16 +735,16 @@ function buildLeaderboard(){
   const now = new Date();
   const threeWeeks = new Date(now); threeWeeks.setDate(threeWeeks.getDate() + 21);
 
-  // Score connected calls today (duration >= 15s, not voicemail)
+  // Count ALL calls today (for display) and qualifying calls (for points)
+  const totalCallCounts = {};  // all calls regardless
   const callPoints = {};
-  const callCounts = {};
+  const callCounts = {};       // qualifying connected calls only
   (RAW.rows || []).forEach(row=>{
     if(row.date !== todayStr) return;
     if(!visibleNames.has(row.rep)) return;
-    // Check if this row has detailed call info
-    const dur = row.dur || 0; // duration in seconds
+    totalCallCounts[row.rep] = (totalCallCounts[row.rep]||0) + 1;
+    const dur = row.dur || 0;
     const disp = (row.disp || "").toLowerCase();
-    // Must be >= 15 seconds and not a voicemail
     if(dur >= 15 && !disp.includes("voicemail")){
       callPoints[row.rep] = (callPoints[row.rep]||0) + 1;
       callCounts[row.rep] = (callCounts[row.rep]||0) + 1;
@@ -765,10 +767,11 @@ function buildLeaderboard(){
 
   // Build leaderboard
   const board = visibleReps.map(r=>{
+    const totalCalls = totalCallCounts[r.name] || 0;
     const calls = callCounts[r.name] || 0;
     const meetings = meetingCounts[r.name] || 0;
     const pts = (callPoints[r.name]||0) + (meetingPoints[r.name]||0);
-    return { name: r.name, team: r.team, color: r.color, calls, meetings, pts };
+    return { name: r.name, team: r.team, color: r.color, totalCalls, calls, meetings, pts };
   }).sort((a,b) => b.pts - a.pts || b.calls - a.calls);
 
   // Subtitle
@@ -784,15 +787,16 @@ function buildLeaderboard(){
   const teamScores = {};
   PGD_TEAMS.forEach(t=>{
     const memberNames = new Set(t.members.map(m=>m.rep));
-    let totalPts=0, totalCalls=0, totalMeetings=0;
+    let totalPts=0, totalAllCalls=0, totalQualCalls=0, totalMeetings=0;
     board.forEach(b=>{
       if(memberNames.has(b.name)){
         totalPts += b.pts;
-        totalCalls += b.calls;
+        totalAllCalls += b.totalCalls;
+        totalQualCalls += b.calls;
         totalMeetings += b.meetings;
       }
     });
-    teamScores[t.name] = {pts:totalPts, calls:totalCalls, meetings:totalMeetings};
+    teamScores[t.name] = {pts:totalPts, allCalls:totalAllCalls, qualCalls:totalQualCalls, meetings:totalMeetings};
   });
 
   const battleEl = document.getElementById("teamBattle");
@@ -813,7 +817,8 @@ function buildLeaderboard(){
         <div class="team-card-points">${sc.pts}</div>
         <div class="team-card-label">Total points</div>
         <div class="team-card-stats">
-          <div class="team-card-stat"><div class="v">${sc.calls}</div><div class="l">Calls</div></div>
+          <div class="team-card-stat"><div class="v">${sc.allCalls}</div><div class="l">All Calls</div></div>
+          <div class="team-card-stat"><div class="v">${sc.qualCalls}</div><div class="l">Connected 15s+</div></div>
           <div class="team-card-stat"><div class="v">${sc.meetings}</div><div class="l">Meetings</div></div>
         </div>
         <div class="team-card-roster">${rosterHtml}</div>
@@ -847,8 +852,12 @@ function buildLeaderboard(){
         </div>
         <div class="lb-stats">
           <div class="lb-stat">
+            <div class="v">${b.totalCalls}</div>
+            <div class="l">All Calls</div>
+          </div>
+          <div class="lb-stat">
             <div class="v">${b.calls}</div>
-            <div class="l">Calls (${b.calls} pts)</div>
+            <div class="l">Connected (${b.calls} pts)</div>
           </div>
           <div class="lb-stat">
             <div class="v">${b.meetings}</div>
@@ -882,12 +891,13 @@ document.getElementById("downloadXlsx").addEventListener("click", ()=>{
   const repTeamMap = {};
   PGD_TEAMS.forEach(t => t.members.forEach(m => { repTeamMap[m.rep] = t.name }));
 
-  const lbHeader = ["Rank", "Name", "Team", "PGD Team", "Connected Calls", "Call Points", "Meetings Booked", "Meeting Points", "Total Points"];
+  const lbHeader = ["Rank", "Name", "Team", "PGD Team", "All Calls", "Connected Calls (15s+)", "Call Points", "Meetings Booked", "Meeting Points", "Total Points"];
   const lbRows = board.map((b, i) => [
     i + 1,
     b.name,
     b.team,
     repTeamMap[b.name] || "",
+    b.totalCalls,
     b.calls,
     b.calls,
     b.meetings,
