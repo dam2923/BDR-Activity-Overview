@@ -52,7 +52,12 @@ H = {"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"}
 SEARCH_CAP = 10000
 
 
+# Throttle: HubSpot free/starter allows ~10 requests/second.
+# We add a small delay between calls to stay under the per-second limit.
+API_DELAY = 0.15  # seconds between requests
+
 def http_get(url):
+    time.sleep(API_DELAY)
     req = urllib.request.Request(url, headers=H)
     for a in range(6):
         try:
@@ -60,7 +65,9 @@ def http_get(url):
                 return json.loads(r.read())
         except urllib.error.HTTPError as e:
             if e.code in (429, 502, 503, 504) and a < 5:
-                time.sleep(2 ** a); continue
+                wait = max(2 ** a, 5) if e.code == 429 else 2 ** a
+                print(f"  Rate limited ({e.code}), waiting {wait}s…", file=sys.stderr)
+                time.sleep(wait); continue
             try: body = e.read().decode()[:500]
             except Exception: body = ""
             print(f"HTTP {e.code} on GET {url}\n{body}", file=sys.stderr)
@@ -68,6 +75,7 @@ def http_get(url):
 
 
 def http_post(url, body):
+    time.sleep(API_DELAY)
     req = urllib.request.Request(url, data=json.dumps(body).encode(), headers=H, method="POST")
     for a in range(6):
         try:
@@ -75,7 +83,9 @@ def http_post(url, body):
                 return json.loads(r.read())
         except urllib.error.HTTPError as e:
             if e.code in (429, 502, 503, 504) and a < 5:
-                time.sleep(2 ** a); continue
+                wait = max(2 ** a, 5) if e.code == 429 else 2 ** a
+                print(f"  Rate limited ({e.code}), waiting {wait}s…", file=sys.stderr)
+                time.sleep(wait); continue
             try: rb = e.read().decode()[:500]
             except Exception: rb = ""
             print(f"HTTP {e.code} on POST {url}\n{rb}", file=sys.stderr)
