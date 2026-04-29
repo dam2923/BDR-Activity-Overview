@@ -1101,6 +1101,29 @@ function buildQuarter(){
     teamScores[t.name] = {pts:totalPts, allCalls:totalAllCalls, qualCalls:totalQualCalls, meetings:totalMeetings};
   });
 
+  window._qtrBoard = board;
+  window._qtrTeamScores = teamScores;
+  window._qtrLabel = qLabel;
+
+  // Populate the quarter summary strip on the Pipeline Gen Day tab (before early return)
+  const stripEl = document.getElementById("pgdQtrSummary");
+  if(stripEl){
+    let stripHtml = `<div class="qtr-strip">`;
+    PGD_TEAMS.forEach(t=>{
+      const sc = teamScores[t.name];
+      stripHtml += `
+        <div class="qtr-strip-card ${t.cssClass}">
+          <div>
+            <div class="qtr-strip-name">${t.name}</div>
+            <div class="qtr-strip-label">${qLabel} total</div>
+          </div>
+          <div class="qtr-strip-pts">${sc.pts}</div>
+        </div>`;
+    });
+    stripHtml += `</div>`;
+    stripEl.innerHTML = stripHtml;
+  }
+
   const battleEl = document.getElementById("qtrTeamBattle");
   let battleHtml = "";
   PGD_TEAMS.forEach((t,i)=>{
@@ -1136,9 +1159,6 @@ function buildQuarter(){
   const el = document.getElementById("qtrLeaderboard");
   if(board.every(b => b.pts === 0)){
     el.innerHTML = `<div class="lb-empty">No qualifying activity yet this quarter.</div>`;
-    window._qtrBoard = board;
-    window._qtrTeamScores = teamScores;
-    window._qtrLabel = qLabel;
     return;
   }
 
@@ -1175,29 +1195,6 @@ function buildQuarter(){
       </div>`;
   });
   el.innerHTML = html;
-
-  window._qtrBoard = board;
-  window._qtrTeamScores = teamScores;
-  window._qtrLabel = qLabel;
-
-  // Populate the quarter summary strip on the Pipeline Gen Day tab
-  const stripEl = document.getElementById("pgdQtrSummary");
-  if(stripEl){
-    let stripHtml = `<div class="qtr-strip">`;
-    PGD_TEAMS.forEach(t=>{
-      const sc = teamScores[t.name];
-      stripHtml += `
-        <div class="qtr-strip-card ${t.cssClass}">
-          <div>
-            <div class="qtr-strip-name">${t.name}</div>
-            <div class="qtr-strip-label">${qLabel} total</div>
-          </div>
-          <div class="qtr-strip-pts">${sc.pts}</div>
-        </div>`;
-    });
-    stripHtml += `</div>`;
-    stripEl.innerHTML = stripHtml;
-  }
 }
 
 // ---------- Quarter Excel Download ----------
