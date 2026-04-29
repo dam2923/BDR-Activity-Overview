@@ -115,11 +115,12 @@
   body.tv-mode .qtr-strip-name{font-size:16px}
   body.tv-mode .qtr-strip-pts{font-size:28px}
   body.tv-mode .qtr-strip-label{font-size:11px}
-  .qtr-strip-top2{display:flex;gap:12px;justify-content:center;margin-top:6px;margin-bottom:4px}
-  .qtr-strip-person{font-size:13px;color:var(--fg);opacity:.85}
-  .qtr-strip-person strong{color:var(--accent);margin-left:2px}
-  body.tv-mode .qtr-strip-top2{margin-top:8px;gap:18px}
-  body.tv-mode .qtr-strip-person{font-size:16px}
+  .qtr-strip-person{display:flex;align-items:center;gap:8px;padding:5px 10px;font-size:13px;color:var(--fg)}
+  .qtr-strip-medal{font-size:16px}
+  .qtr-strip-pname{font-weight:600}
+  .qtr-strip-ppts{color:var(--accent);font-weight:700;margin-left:auto}
+  body.tv-mode .qtr-strip-person{padding:6px 14px;font-size:16px}
+  body.tv-mode .qtr-strip-medal{font-size:20px}
 
   /* Normal mode: stack vertically (team battle on top, leaderboard below) */
   .tv-layout{display:flex;flex-direction:column-reverse;gap:20px}
@@ -1127,14 +1128,21 @@ function buildQuarter(){
     });
     stripHtml += `</div>`;
     // Top 2 individuals for the quarter
-    const top2 = board.filter(b=>b.pts>0).slice(0,2);
+    const repTeamLookup = {};
+    PGD_TEAMS.forEach(t=>t.members.forEach(m=>{ repTeamLookup[m.rep] = t.name }));
+    const top2 = board.slice(0,2);
     if(top2.length){
-      stripHtml += `<div class="qtr-strip-top2">`;
       const medals = ["&#x1F947;","&#x1F948;"];
       top2.forEach((b,i)=>{
-        stripHtml += `<span class="qtr-strip-person">${medals[i]} ${b.name.split(" ")[0]} <strong>${b.pts} pts</strong></span>`;
+        const tm = repTeamLookup[b.name] || "";
+        const tmClass = tm ? tm.toLowerCase() : "";
+        stripHtml += `<div class="qtr-strip-person">
+          <span class="qtr-strip-medal">${medals[i]}</span>
+          <span class="qtr-strip-pname">${b.name}</span>
+          <span class="qtr-strip-ppts">${b.pts} pts</span>
+          ${tm ? `<span class="lb-team-badge ${tmClass}">${tm}</span>` : ""}
+        </div>`;
       });
-      stripHtml += `</div>`;
     }
     stripEl.innerHTML = stripHtml;
   }
