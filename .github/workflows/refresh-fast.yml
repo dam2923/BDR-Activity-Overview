@@ -1,29 +1,28 @@
 name: "Fast refresh (Pipeline Gen Day)"
 
-# Runs every 5 minutes. DISABLED by default — enable it in the Actions tab
-# on Pipeline Generation Days, then disable it again when the day is over.
+# Hit "Run workflow" on a Pipeline Generation Day morning. The job loops
+# for ~8 hours, refreshing every 15 minutes — no dependency on GitHub's
+# unreliable cron scheduler.
 #
-# To enable:  Actions → "Fast refresh (Pipeline Gen Day)" → ••• → Enable workflow
-# To disable: Actions → "Fast refresh (Pipeline Gen Day)" → ••• → Disable workflow
+# To stop it early: Actions → click the running workflow → Cancel workflow.
 
 on:
-  schedule:
-    - cron: "*/15 * * * *"   # every 15 minutes
-  workflow_dispatch: {}       # manual trigger
+  workflow_dispatch: {}       # manual trigger only — no cron
 
 permissions:
   contents: write
 
 concurrency:
-  group: refresh
-  cancel-in-progress: false
+  group: refresh-fast
+  cancel-in-progress: true    # re-triggering restarts the 8-hour window
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
-  refresh:
+  refresh-loop:
     runs-on: ubuntu-latest
+    timeout-minutes: 500      # ~8h20m safety net
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,23 +32,39 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Fetch HubSpot data
+      - name: Refresh loop (every 15 min for ~8 hours)
         env:
           HUBSPOT_TOKEN: ${{ secrets.HUBSPOT_TOKEN }}
           LOOKBACK_DAYS: "420"
           TIMEZONE: "Europe/London"
           REP_NAMES: "Tyreek Burke,Jennifer Fasida,Liam Bolger-Prentice,Zoe Cornelius,Miles Smith,George Watson,Henry McCloskey,Hamid Abusibah,Nathan Brown,Darien Bryan"
-        run: python scripts/fetch_hubspot.py
-
-      - name: Commit refreshed data
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git pull origin main --no-rebase -X theirs || true
-          git add data/data.json
-          if git diff --staged --quiet; then
-            echo "No changes to commit."
-          else
-            git commit -m "chore: fast refresh HubSpot data ($(date -u +%Y-%m-%dT%H:%M))"
-            git push
-          fi
+
+          ITERATIONS=32   # 32 × 15 min = 8 hours
+          for i in $(seq 1 $ITERATIONS); do
+            echo "──── Refresh $i/$ITERATIONS  $(date -u +%Y-%m-%dT%H:%M:%SZ) ────"
+
+            # Pull latest to avoid push conflicts
+            git pull origin main --no-rebase -X theirs || true
+
+            # Fetch fresh data from HubSpot
+            python scripts/fetch_hubspot.py || { echo "Fetch failed, will retry next cycle"; sleep 900; continue; }
+
+            # Commit and push if changed
+            git add data/data.json
+            if git diff --staged --quiet; then
+              echo "No changes to commit."
+            else
+              git commit -m "chore: fast refresh HubSpot data ($(date -u +%Y-%m-%dT%H:%M))"
+              git push || echo "Push failed, will retry next cycle"
+            fi
+
+            # Sleep 15 min (unless this is the last iteration)
+            if [ "$i" -lt "$ITERATIONS" ]; then
+              echo "Sleeping 15 minutes…"
+              sleep 900
+            fi
+          done
+          echo "Done — 8-hour fast refresh window complete."
