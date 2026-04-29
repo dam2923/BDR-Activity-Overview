@@ -50,8 +50,7 @@ jobs:
           if git diff --staged --quiet; then
             echo "No changes to commit."
           else
-            git pull origin main --no-rebase -X theirs || true
-            git add data/data.json
             git commit -m "chore: refresh HubSpot call activity ($(date -u +%Y-%m-%d))"
+            git pull origin main --no-rebase -X ours || true
             git push
           fi
