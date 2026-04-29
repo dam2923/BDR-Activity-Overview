@@ -54,6 +54,20 @@
   .btn.on{border-color:var(--accent);background:#1e3a66}
   .rng{color:var(--muted);font-size:12px;margin-left:8px}
   .banner{background:#3b1d1d;border:1px solid #7a2e2e;color:#fecaca;padding:10px 14px;border-radius:10px;font-size:13px;margin-bottom:12px;display:none}
+  .red-flags{background:#1a1215;border:1px solid #5c2020;border-radius:12px;padding:14px 18px;margin-top:16px;margin-bottom:4px}
+  .red-flags-title{font-size:13px;font-weight:700;color:#f87171;margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em}
+  .red-flag-item{font-size:13px;color:#fca5a5;padding:4px 0;line-height:1.5}
+  .red-flag-item .flag-icon{margin-right:6px}
+  .red-flag-item .flag-name{color:#fecaca;font-weight:600}
+  .red-flag-item .flag-detail{color:#d4a0a0}
+  td.low-vol{color:#f87171;font-weight:600}
+  td.declining{color:#fb923c}
+  .rank-medal{font-size:14px;margin-right:2px}
+  .weekly-meetings-row td{color:var(--accent);font-size:12px}
+  .weekly-rank-row td{font-size:12px;color:var(--muted)}
+  .weekly-rank-row td .rank-medal{font-size:13px}
+  .weekly-meetings-row td,.weekly-rank-row td{border-bottom:1px solid transparent;padding:3px 10px}
+  .weekly-meetings-row+tr>td{border-top:1px solid var(--border)}
 
   /* Tabs */
   .tabs{display:flex;gap:4px;margin-bottom:16px}
@@ -282,6 +296,10 @@
       </div>
 
       <div class="kpis" id="kpis"></div>
+      <div class="red-flags" id="redFlags" style="display:none">
+        <div class="red-flags-title">&#x1F6A9; Red Flags</div>
+        <div id="redFlagsList"></div>
+      </div>
 
       <div class="row two" style="margin-top:20px">
         <div class="card" style="background:var(--panel2)">
@@ -732,11 +750,21 @@ function render(){
     return acc + last7.reduce((a,b)=>a+b,0);
   }, 0);
 
+  // Count meetings in range for KPI
+  let totalMeetingsInRange = 0;
+  if(RAW.meetings){
+    const rs = iso(rangeStart), re = iso(rangeEnd);
+    const shownNames = new Set(shown.map(r=>r.name));
+    RAW.meetings.forEach(m=>{
+      if(m.booked_date && m.booked_date >= rs && m.booked_date <= re && shownNames.has(m.rep))
+        totalMeetingsInRange++;
+    });
+  }
   document.getElementById("kpis").innerHTML = `
     <div class="kpi"><div class="v">${totalCalls.toLocaleString()}</div><div class="l">Total calls (in range)</div></div>
     <div class="kpi"><div class="v">${last7Total.toLocaleString()}</div><div class="l">Last 7 weekdays in range</div></div>
     <div class="kpi"><div class="v">${avgPerDay}</div><div class="l">Avg calls / rep / day</div></div>
-    <div class="kpi"><div class="v">${best.name}</div><div class="l">Top rep (in range)</div></div>
+    <div class="kpi"><div class="v">${totalMeetingsInRange}</div><div class="l">Meetings booked (in range)</div></div>
   `;
 
   const maxTicks = days.length > 120 ? 10 : (days.length > 40 ? 12 : 14);
@@ -777,16 +805,129 @@ function render(){
     }
   }});
 
+  // ---------- Meetings by week ----------
+  const meetingsByWeek = {};  // weekKey -> { repName: count }
+  const meetingsByRep = {};   // repName -> total in range
+  if(RAW.meetings){
+    const rangeStartIso = iso(rangeStart);
+    const rangeEndIso = iso(rangeEnd);
+    RAW.meetings.forEach(m=>{
+      if(!m.booked_date) return;
+      if(m.booked_date < rangeStartIso || m.booked_date > rangeEndIso) return;
+      const rep = m.rep;
+      if(!shown.find(r=>r.name===rep)) return;
+      // Find which week this meeting falls in
+      const mDate = new Date(m.booked_date+"T00:00:00");
+      const wKey = iso(mondayOf(mDate));
+      if(!meetingsByWeek[wKey]) meetingsByWeek[wKey] = {};
+      meetingsByWeek[wKey][rep] = (meetingsByWeek[wKey][rep]||0) + 1;
+      meetingsByRep[rep] = (meetingsByRep[rep]||0) + 1;
+    });
+  }
+
+  // ---------- Red Flags ----------
+  const flags = [];
+  // 1. Low call volume days: reps with <50% of their own average on any day in last 5 working days
+  const recentDays = days.slice(-5);
+  if(recentDays.length >= 3){
+    shown.forEach(r=>{
+      const vals = data[r.name] || [];
+      const nonZero = vals.filter(v=>v>0);
+      if(nonZero.length < 5) return;
+      const avg = nonZero.reduce((a,b)=>a+b,0) / nonZero.length;
+      const threshold = avg * 0.5;
+      const startIdx = days.length - recentDays.length;
+      recentDays.forEach((day, ri)=>{
+        const actual = vals[startIdx + ri] || 0;
+        if(actual > 0 && actual < threshold){
+          flags.push({
+            type: "low-vol",
+            rep: r.name,
+            detail: `Only ${actual} calls on ${fmtShort(day)} (avg is ${Math.round(avg)})`,
+          });
+        }
+      });
+    });
+  }
+  // 2. Declining trend: compare last 2 full weeks
+  if(weeks.length >= 3){
+    shown.forEach(r=>{
+      const wd = weeklyData[r.name];
+      if(!wd || wd.length < 3) return;
+      // Use second-to-last and third-to-last (last week might be partial)
+      const thisWk = wd[wd.length - 2] || 0;
+      const prevWk = wd[wd.length - 3] || 0;
+      const twoBack = wd.length >= 4 ? (wd[wd.length - 4] || 0) : null;
+      if(prevWk > 0 && thisWk < prevWk * 0.7){
+        const pctDrop = Math.round((1 - thisWk/prevWk) * 100);
+        let streak = twoBack !== null && twoBack > prevWk ? " (2-week decline)" : "";
+        flags.push({
+          type: "declining",
+          rep: r.name,
+          detail: `Call volume dropped ${pctDrop}% week-on-week (${prevWk} → ${thisWk})${streak}`,
+        });
+      }
+    });
+  }
+
+  const flagsEl = document.getElementById("redFlags");
+  const flagsList = document.getElementById("redFlagsList");
+  if(flags.length){
+    flagsEl.style.display = "block";
+    flagsList.innerHTML = flags.map(f=>{
+      const icon = f.type === "low-vol" ? "&#x1F4C9;" : "&#x1F4C9;";
+      return `<div class="red-flag-item">${icon} <span class="flag-name">${f.rep}</span> — <span class="flag-detail">${f.detail}</span></div>`;
+    }).join("");
+  } else {
+    flagsEl.style.display = "none";
+  }
+
+  // ---------- Weekly Summary Table ----------
   const t = document.getElementById("weeklyTable");
   let html = "<thead><tr><th>Week start</th>";
   shown.forEach(r=>{ html+=`<th><span class="pill" style="background:${r.color}"></span>${r.name}</th>` });
   html+="<th>Total</th></tr></thead><tbody>";
   weeks.slice().reverse().forEach(w=>{
     const origIndex = weeks.indexOf(w);
+    // Calls row
     let rowTotal=0;
+    const repCallsThisWeek = {};
     html+=`<tr><td>${fmtWithYear(new Date(w.key))}</td>`;
-    shown.forEach(r=>{ const v=(weeklyData[r.name]||[])[origIndex]||0; rowTotal+=v; html+=`<td>${v}</td>` });
+    shown.forEach(r=>{
+      const v=(weeklyData[r.name]||[])[origIndex]||0;
+      rowTotal+=v;
+      repCallsThisWeek[r.name] = v;
+      // Check if this rep has a red flag for this week
+      const isLow = flags.some(f=>f.type==="declining" && f.rep===r.name && origIndex === weeks.length - 2);
+      html+=`<td${isLow ? ' class="declining"' : ''}>${v}</td>`;
+    });
     html+=`<td><strong>${rowTotal}</strong></td></tr>`;
+
+    // Rankings row for this week
+    const ranked = shown.map(r=>({name:r.name, calls:repCallsThisWeek[r.name]||0}))
+      .filter(x=>x.calls>0)
+      .sort((a,b)=>b.calls-a.calls);
+    const rankMap = {};
+    ranked.forEach((x,i)=>{ rankMap[x.name] = i+1 });
+    const medals = {1:"&#x1F947;",2:"&#x1F948;",3:"&#x1F949;",4:"4th",5:"5th"};
+    html+=`<tr class="weekly-rank-row"><td style="color:var(--muted);font-size:11px">Rank</td>`;
+    shown.forEach(r=>{
+      const rank = rankMap[r.name];
+      const label = rank ? (medals[rank] || `${rank}th`) : "—";
+      html+=`<td>${rank ? `<span class="rank-medal">${label}</span>` : "—"}</td>`;
+    });
+    html+=`<td></td></tr>`;
+
+    // Meetings row for this week
+    const wMeetings = meetingsByWeek[w.key] || {};
+    let meetTotal = 0;
+    html+=`<tr class="weekly-meetings-row"><td style="font-size:11px">Meetings booked</td>`;
+    shown.forEach(r=>{
+      const mc = wMeetings[r.name] || 0;
+      meetTotal += mc;
+      html+=`<td>${mc || "—"}</td>`;
+    });
+    html+=`<td><strong>${meetTotal || "—"}</strong></td></tr>`;
   });
   html+="</tbody>"; t.innerHTML = html;
 }
