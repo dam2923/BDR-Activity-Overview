@@ -883,40 +883,35 @@ function render(){
   }
 
   // ---------- Weekly Summary Table ----------
+  // Overall ranking across the whole period
+  const periodTotals = shown.map(r=>{
+    const vals = data[r.name] || [];
+    return {name:r.name, total: vals.reduce((a,b)=>a+b,0)};
+  }).sort((a,b)=>b.total-a.total);
+  const overallRank = {};
+  periodTotals.forEach((x,i)=>{ overallRank[x.name] = i+1 });
+  const medals = {1:"&#x1F947;",2:"&#x1F948;",3:"&#x1F949;",4:"4th",5:"5th"};
+
   const t = document.getElementById("weeklyTable");
   let html = "<thead><tr><th>Week start</th>";
-  shown.forEach(r=>{ html+=`<th><span class="pill" style="background:${r.color}"></span>${r.name}</th>` });
+  shown.forEach(r=>{
+    const rank = overallRank[r.name];
+    const medal = rank ? (medals[rank] || `${rank}th`) : "";
+    html+=`<th><span class="pill" style="background:${r.color}"></span>${medal ? `<span class="rank-medal">${medal}</span> ` : ""}${r.name}</th>`;
+  });
   html+="<th>Total</th></tr></thead><tbody>";
   weeks.slice().reverse().forEach(w=>{
     const origIndex = weeks.indexOf(w);
     // Calls row
     let rowTotal=0;
-    const repCallsThisWeek = {};
     html+=`<tr><td>${fmtWithYear(new Date(w.key))}</td>`;
     shown.forEach(r=>{
       const v=(weeklyData[r.name]||[])[origIndex]||0;
       rowTotal+=v;
-      repCallsThisWeek[r.name] = v;
-      // Check if this rep has a red flag for this week
       const isLow = flags.some(f=>f.type==="declining" && f.rep===r.name && origIndex === weeks.length - 2);
       html+=`<td${isLow ? ' class="declining"' : ''}>${v}</td>`;
     });
     html+=`<td><strong>${rowTotal}</strong></td></tr>`;
-
-    // Rankings row for this week
-    const ranked = shown.map(r=>({name:r.name, calls:repCallsThisWeek[r.name]||0}))
-      .filter(x=>x.calls>0)
-      .sort((a,b)=>b.calls-a.calls);
-    const rankMap = {};
-    ranked.forEach((x,i)=>{ rankMap[x.name] = i+1 });
-    const medals = {1:"&#x1F947;",2:"&#x1F948;",3:"&#x1F949;",4:"4th",5:"5th"};
-    html+=`<tr class="weekly-rank-row"><td style="color:var(--muted);font-size:11px">Rank</td>`;
-    shown.forEach(r=>{
-      const rank = rankMap[r.name];
-      const label = rank ? (medals[rank] || `${rank}th`) : "—";
-      html+=`<td>${rank ? `<span class="rank-medal">${label}</span>` : "—"}</td>`;
-    });
-    html+=`<td></td></tr>`;
 
     // Meetings row for this week
     const wMeetings = meetingsByWeek[w.key] || {};
