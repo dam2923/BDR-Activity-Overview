@@ -142,7 +142,8 @@
   body.tv-mode .banner,
   body.tv-mode .tabs,
   body.tv-mode #tab-calls{display:none!important}
-  body.tv-mode #tab-pipeline{display:block!important;height:100vh;padding:20px 32px;overflow:hidden;position:relative}
+  body.tv-mode .tab-panel.tv-target{display:block!important;height:100vh;padding:20px 32px;overflow:hidden;position:relative}
+  body.tv-mode .tab-panel:not(.tv-target){display:none!important}
   body.tv-mode .tv-btn{display:none}
 
   /* TV: top bar — title + rules on one line */
@@ -218,6 +219,7 @@
   <div class="tabs">
     <button class="tab active" data-tab="calls">Call Activity</button>
     <button class="tab" data-tab="pipeline">Pipeline Generation Day</button>
+    <button class="tab" data-tab="quarter">Quarter</button>
   </div>
 
   <!-- ========== TAB 1: CALL ACTIVITY ========== -->
@@ -303,6 +305,33 @@
       </div>
     </div>
   </div>
+
+  <!-- ========== TAB 3: QUARTER ========== -->
+  <div class="tab-panel" id="tab-quarter">
+    <div class="pgd-rules">
+      <strong>Scoring:</strong> Connected call (15s+, not voicemail) = <strong>1 point</strong> · Meeting booked (within next 3 weeks) = <strong>20 points</strong>
+    </div>
+    <div class="pgd-header">
+      <div>
+        <div class="pgd-title" id="qtrTitle">Quarter Leaderboard</div>
+        <div class="pgd-subtitle" id="qtrSubtitle"></div>
+      </div>
+      <div>
+        <button class="tv-btn" id="downloadQtrXlsx">&#x1F4E5; Download Excel</button>
+        <button class="tv-btn" id="tvModeBtnQtr">&#x1F4FA; TV Mode</button>
+      </div>
+    </div>
+
+    <div class="tv-layout">
+      <div class="tv-left">
+        <h3>Individual Leaderboard</h3>
+        <div id="qtrLeaderboard"></div>
+      </div>
+      <div class="tv-right">
+        <div class="team-battle" id="qtrTeamBattle"></div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div class="tv-exit" id="tvExit"><span>Press <strong>Esc</strong> or click here to exit TV mode</span></div>
@@ -372,7 +401,10 @@ const banner = document.getElementById("banner");
 function showBanner(msg){ banner.style.display="block"; banner.textContent = msg }
 
 // ---------- TV Mode ----------
-function enterTV(){
+function enterTV(tabId){
+  // Mark which tab to show in TV mode
+  document.querySelectorAll(".tab-panel").forEach(p=>p.classList.remove("tv-target"));
+  document.getElementById(tabId).classList.add("tv-target");
   document.body.classList.add("tv-mode");
   if(document.documentElement.requestFullscreen){
     document.documentElement.requestFullscreen().catch(()=>{});
@@ -380,15 +412,17 @@ function enterTV(){
 }
 function exitTV(){
   document.body.classList.remove("tv-mode");
+  document.querySelectorAll(".tab-panel").forEach(p=>p.classList.remove("tv-target"));
   if(document.fullscreenElement){
     document.exitFullscreen().catch(()=>{});
   }
 }
-document.getElementById("tvModeBtn").addEventListener("click", enterTV);
+document.getElementById("tvModeBtn").addEventListener("click", ()=>enterTV("tab-pipeline"));
+document.getElementById("tvModeBtnQtr").addEventListener("click", ()=>enterTV("tab-quarter"));
 document.getElementById("tvExit").addEventListener("click", exitTV);
 document.addEventListener("keydown",(e)=>{ if(e.key==="Escape") exitTV(); });
 document.addEventListener("fullscreenchange",()=>{
-  if(!document.fullscreenElement) document.body.classList.remove("tv-mode");
+  if(!document.fullscreenElement){ document.body.classList.remove("tv-mode"); document.querySelectorAll(".tab-panel").forEach(p=>p.classList.remove("tv-target")); }
 });
 
 // ---------- Tab switching ----------
@@ -422,10 +456,12 @@ document.getElementById("refreshRate").addEventListener("change",(e)=>{
 });
 
 // ---------- URL parameters ----------
-// ?refresh=5  → auto-refresh every 5 min
-// ?tv=1      → go straight into TV mode on Pipeline tab
-// ?tab=pipeline → open Pipeline tab
-// Combine: ?tv=1&refresh=5
+// ?refresh=5       → auto-refresh every 5 min
+// ?tv=1            → TV mode on Pipeline Gen Day tab
+// ?tv=quarter      → TV mode on Quarter tab
+// ?tab=pipeline    → open Pipeline tab
+// ?tab=quarter     → open Quarter tab
+// Combine: ?tv=quarter&refresh=5
 const urlParams = new URLSearchParams(window.location.search);
 
 if(urlParams.has("refresh")){
@@ -433,27 +469,31 @@ if(urlParams.has("refresh")){
   if(mins > 0) setRefreshRate(mins * 60);
 }
 
-if(urlParams.get("tab") === "pipeline" || urlParams.has("tv")){
+const urlTab = urlParams.get("tab") || (urlParams.has("tv") ? (urlParams.get("tv")==="quarter" ? "quarter" : "pipeline") : null);
+if(urlTab){
   document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
   document.querySelectorAll(".tab-panel").forEach(p=>p.classList.remove("active"));
-  document.querySelector('[data-tab="pipeline"]').classList.add("active");
-  document.getElementById("tab-pipeline").classList.add("active");
+  const tabBtn = document.querySelector(`[data-tab="${urlTab}"]`);
+  if(tabBtn) tabBtn.classList.add("active");
+  const tabPanel = document.getElementById("tab-"+urlTab);
+  if(tabPanel) tabPanel.classList.add("active");
 }
 
-if(urlParams.get("tv") === "1"){
-  // Small delay to let data load first, then enter TV mode
-  setTimeout(()=> enterTV(), 500);
+if(urlParams.has("tv")){
+  const tvVal = urlParams.get("tv");
+  const tvTabId = tvVal === "quarter" ? "tab-quarter" : "tab-pipeline";
+  setTimeout(()=> enterTV(tvTabId), 500);
 }
 
 // ---------- Load data ----------
 function loadData(){
   fetch("data/data.json?t=" + Date.now(), {cache:"no-store"})
     .then(r => { if(!r.ok) throw new Error("data.json not found"); return r.json() })
-    .then(d => { RAW = d; build(); buildLeaderboard(); })
+    .then(d => { RAW = d; build(); buildLeaderboard(); buildQuarter(); })
     .catch(err => {
       showBanner("Could not load data/data.json — showing empty dashboard.");
       RAW = { rows: [], meetings: [], generated_at: null };
-      build(); buildLeaderboard();
+      build(); buildLeaderboard(); buildQuarter();
     });
 }
 loadData();
@@ -957,6 +997,208 @@ document.getElementById("downloadXlsx").addEventListener("click", ()=>{
 
   // Download
   XLSX.writeFile(wb, "Pipeline_Gen_Day_" + todayStr + ".xlsx");
+});
+
+// ---------- Quarter Leaderboard ----------
+function getQuarterStart(){
+  const now = new Date();
+  const q = Math.floor(now.getMonth() / 3);
+  return iso(new Date(now.getFullYear(), q * 3, 1));
+}
+
+function buildQuarter(){
+  if(!RAW) return;
+  const qStart = getQuarterStart();
+  const todayStr = iso(new Date());
+  const visibleReps = getVisibleReps();
+  const visibleNames = new Set(visibleReps.map(r=>r.name));
+  const now = new Date();
+
+  // Count all calls and qualifying calls in the quarter
+  const totalCallCounts = {};
+  const callPoints = {};
+  const callCounts = {};
+  (RAW.rows || []).forEach(row=>{
+    if(row.date < qStart || row.date > todayStr) return;
+    if(!visibleNames.has(row.rep)) return;
+    totalCallCounts[row.rep] = (totalCallCounts[row.rep]||0) + 1;
+    const dur = row.dur || 0;
+    const disp = (row.disp || "").toLowerCase();
+    if(dur >= 15 && !disp.includes("voicemail")){
+      callPoints[row.rep] = (callPoints[row.rep]||0) + 1;
+      callCounts[row.rep] = (callCounts[row.rep]||0) + 1;
+    }
+  });
+
+  // Meetings booked this quarter where meeting_date was within 3 weeks of booking
+  const meetingPoints = {};
+  const meetingCounts = {};
+  (RAW.meetings || []).forEach(m=>{
+    if(m.booked_date < qStart || m.booked_date > todayStr) return;
+    if(!visibleNames.has(m.rep)) return;
+    if(!m.meeting_date) return;
+    const bookedDate = new Date(m.booked_date + "T00:00:00");
+    const mtgDate = new Date(m.meeting_date + "T00:00:00");
+    const threeWeeksLater = new Date(bookedDate);
+    threeWeeksLater.setDate(threeWeeksLater.getDate() + 21);
+    if(mtgDate >= bookedDate && mtgDate <= threeWeeksLater){
+      meetingPoints[m.rep] = (meetingPoints[m.rep]||0) + 20;
+      meetingCounts[m.rep] = (meetingCounts[m.rep]||0) + 1;
+    }
+  });
+
+  const board = visibleReps.map(r=>{
+    const totalCalls = totalCallCounts[r.name] || 0;
+    const calls = callCounts[r.name] || 0;
+    const meetings = meetingCounts[r.name] || 0;
+    const pts = (callPoints[r.name]||0) + (meetingPoints[r.name]||0);
+    return { name: r.name, team: r.team, color: r.color, totalCalls, calls, meetings, pts };
+  }).sort((a,b) => b.pts - a.pts || b.calls - a.calls);
+
+  // Subtitle
+  const qStartDate = new Date(qStart + "T00:00:00");
+  const qLabel = "Q" + (Math.floor(qStartDate.getMonth()/3)+1) + " " + qStartDate.getFullYear();
+  const sub = document.getElementById("qtrSubtitle");
+  sub.textContent = qLabel + " · " + qStartDate.toLocaleDateString(undefined,{day:"numeric",month:"short"}) + " — Today";
+  if(RAW.generated_at){
+    const dt = new Date(RAW.generated_at);
+    sub.textContent += " · Data as of " + dt.toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"});
+  }
+  document.getElementById("qtrTitle").textContent = qLabel + " Leaderboard";
+
+  // Team battle cards
+  const teamScores = {};
+  PGD_TEAMS.forEach(t=>{
+    const memberNames = new Set(t.members.map(m=>m.rep));
+    let totalPts=0, totalAllCalls=0, totalQualCalls=0, totalMeetings=0;
+    board.forEach(b=>{
+      if(memberNames.has(b.name)){
+        totalPts += b.pts;
+        totalAllCalls += b.totalCalls;
+        totalQualCalls += b.calls;
+        totalMeetings += b.meetings;
+      }
+    });
+    teamScores[t.name] = {pts:totalPts, allCalls:totalAllCalls, qualCalls:totalQualCalls, meetings:totalMeetings};
+  });
+
+  const battleEl = document.getElementById("qtrTeamBattle");
+  let battleHtml = "";
+  PGD_TEAMS.forEach((t,i)=>{
+    const sc = teamScores[t.name];
+    const rosterHtml = t.members.map(m=>{
+      const role = m.role ? `<span class="role">${m.role}</span> — ` : "";
+      const firstName = m.rep.split(" ")[0];
+      const pb = board.find(b=>b.name===m.rep);
+      const pts = pb ? pb.pts : 0;
+      return `${role}${firstName} <span style="color:var(--accent)">${pts} pts</span>`;
+    }).join("<br>");
+
+    battleHtml += `
+      <div class="team-card ${t.cssClass}">
+        <div class="team-card-name">Team ${t.name}</div>
+        <div class="team-card-points">${sc.pts}</div>
+        <div class="team-card-label">Total points</div>
+        <div class="team-card-stats">
+          <div class="team-card-stat"><div class="v">${sc.allCalls}</div><div class="l">All Calls</div></div>
+          <div class="team-card-stat"><div class="v">${sc.qualCalls}</div><div class="l">Connected 15s+</div></div>
+          <div class="team-card-stat"><div class="v">${sc.meetings}</div><div class="l">Meetings</div></div>
+        </div>
+        <div class="team-card-roster">${rosterHtml}</div>
+      </div>`;
+    if(i === 0) battleHtml += `<div class="team-vs"><span class="team-vs-text">VS</span></div>`;
+  });
+  battleEl.innerHTML = battleHtml;
+
+  // Individual leaderboard
+  const repTeamMap = {};
+  PGD_TEAMS.forEach(t=>t.members.forEach(m=>{ repTeamMap[m.rep] = t.name }));
+
+  const el = document.getElementById("qtrLeaderboard");
+  if(board.every(b => b.pts === 0)){
+    el.innerHTML = `<div class="lb-empty">No qualifying activity yet this quarter.</div>`;
+    window._qtrBoard = board;
+    window._qtrTeamScores = teamScores;
+    window._qtrLabel = qLabel;
+    return;
+  }
+
+  let html = "";
+  board.forEach((b,i)=>{
+    const rankClass = i===0 ? "gold" : i===1 ? "silver" : i===2 ? "bronze" : "";
+    const medal = i===0 ? "&#x1F947;" : i===1 ? "&#x1F948;" : i===2 ? "&#x1F949;" : "";
+    const pgdTeam = repTeamMap[b.name] || "";
+    const teamBadge = pgdTeam ? `<span class="lb-team-badge ${pgdTeam.toLowerCase()}" style="margin-left:6px">${pgdTeam}</span>` : "";
+    html += `
+      <div class="lb-row">
+        <div class="lb-rank ${rankClass}">${medal || (i+1)}</div>
+        <div class="lb-name">
+          ${b.name}${teamBadge}
+        </div>
+        <div class="lb-stats">
+          <div class="lb-stat">
+            <div class="v">${b.totalCalls}</div>
+            <div class="l">All Calls</div>
+          </div>
+          <div class="lb-stat">
+            <div class="v">${b.calls}</div>
+            <div class="l">Connected (${b.calls} pts)</div>
+          </div>
+          <div class="lb-stat">
+            <div class="v">${b.meetings}</div>
+            <div class="l">Meetings (${b.meetings * 20} pts)</div>
+          </div>
+        </div>
+        <div>
+          <div class="lb-points">${b.pts}</div>
+          <div class="lb-points-label">points</div>
+        </div>
+      </div>`;
+  });
+  el.innerHTML = html;
+
+  window._qtrBoard = board;
+  window._qtrTeamScores = teamScores;
+  window._qtrLabel = qLabel;
+}
+
+// ---------- Quarter Excel Download ----------
+document.getElementById("downloadQtrXlsx").addEventListener("click", ()=>{
+  if(!window._qtrBoard) return;
+  const board = window._qtrBoard;
+  const teamScores = window._qtrTeamScores;
+  const qLabel = window._qtrLabel || "Quarter";
+  const todayStr = iso(new Date());
+
+  const wb = XLSX.utils.book_new();
+  const repTeamMap = {};
+  PGD_TEAMS.forEach(t => t.members.forEach(m => { repTeamMap[m.rep] = t.name }));
+
+  const lbHeader = ["Rank", "Name", "Team", "PGD Team", "All Calls", "Connected Calls (15s+)", "Call Points", "Meetings Booked", "Meeting Points", "Total Points"];
+  const lbRows = board.map((b, i) => [i+1, b.name, b.team, repTeamMap[b.name]||"", b.totalCalls, b.calls, b.calls, b.meetings, b.meetings*20, b.pts]);
+  const lbData = [[qLabel + " Leaderboard"], [], ["Individual Leaderboard"], lbHeader, ...lbRows];
+  const ws1 = XLSX.utils.aoa_to_sheet(lbData);
+  ws1["!cols"] = [{wch:6},{wch:28},{wch:6},{wch:12},{wch:12},{wch:22},{wch:12},{wch:18},{wch:15},{wch:14}];
+  XLSX.utils.book_append_sheet(wb, ws1, "Leaderboard");
+
+  const teamRows = [[qLabel + " — Team Summary"], [], ["Team", "Total Points", "All Calls", "Connected 15s+", "Meetings", "Meeting Points"]];
+  PGD_TEAMS.forEach(t => {
+    const sc = teamScores[t.name];
+    teamRows.push(["Team "+t.name, sc.pts, sc.allCalls, sc.qualCalls, sc.meetings, sc.meetings*20]);
+  });
+  teamRows.push([], ["Team Rosters"]);
+  PGD_TEAMS.forEach(t => {
+    teamRows.push([], ["Team "+t.name], ["Name","Role","Points"]);
+    t.members.forEach(m => {
+      const pb = board.find(b=>b.name===m.rep);
+      teamRows.push([m.rep, m.role||"", pb?pb.pts:0]);
+    });
+  });
+  const ws2 = XLSX.utils.aoa_to_sheet(teamRows);
+  ws2["!cols"] = [{wch:28},{wch:14},{wch:14},{wch:16},{wch:14},{wch:15}];
+  XLSX.utils.book_append_sheet(wb, ws2, "Teams");
+
+  XLSX.writeFile(wb, qLabel.replace(" ","_") + "_Leaderboard_" + todayStr + ".xlsx");
 });
 </script>
 </body>
