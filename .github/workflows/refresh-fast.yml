@@ -46,18 +46,16 @@ jobs:
           for i in $(seq 1 $ITERATIONS); do
             echo "──── Refresh $i/$ITERATIONS  $(date -u +%Y-%m-%dT%H:%M:%SZ) ────"
 
-            # Pull latest to avoid push conflicts
-            git pull origin main --no-rebase -X theirs || true
-
             # Fetch fresh data from HubSpot
             python scripts/fetch_hubspot.py || { echo "Fetch failed, will retry next cycle"; sleep 900; continue; }
 
-            # Commit and push if changed
+            # Commit first, then pull remote changes, then push
             git add data/data.json
             if git diff --staged --quiet; then
               echo "No changes to commit."
             else
               git commit -m "chore: fast refresh HubSpot data ($(date -u +%Y-%m-%dT%H:%M))"
+              git pull origin main --no-rebase -X ours || true
               git push || echo "Push failed, will retry next cycle"
             fi
 
