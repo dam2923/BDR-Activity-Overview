@@ -98,6 +98,24 @@
   .pgd-rules{background:var(--panel2);border:1px solid var(--border);border-radius:10px;padding:14px 18px;font-size:13px;color:var(--muted);margin-bottom:20px;line-height:1.6}
   .pgd-rules strong{color:var(--text)}
 
+  /* Quarter summary strip on Pipeline tab */
+  .qtr-strip{display:flex;gap:8px;margin-bottom:8px}
+  .qtr-strip-card{flex:1;background:var(--panel2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;display:flex;align-items:center;justify-content:space-between}
+  .qtr-strip-card.beast{border-left:3px solid #f87171}
+  .qtr-strip-card.dench{border-left:3px solid #60a5fa}
+  .qtr-strip-name{font-size:13px;font-weight:700;color:var(--muted)}
+  .qtr-strip-card.beast .qtr-strip-name{color:#f87171}
+  .qtr-strip-card.dench .qtr-strip-name{color:#60a5fa}
+  .qtr-strip-pts{font-size:20px;font-weight:800}
+  .qtr-strip-card.beast .qtr-strip-pts{color:#fb923c}
+  .qtr-strip-card.dench .qtr-strip-pts{color:#60a5fa}
+  .qtr-strip-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
+  body.tv-mode .qtr-strip{margin-bottom:10px}
+  body.tv-mode .qtr-strip-card{padding:12px 18px;border-radius:12px}
+  body.tv-mode .qtr-strip-name{font-size:16px}
+  body.tv-mode .qtr-strip-pts{font-size:28px}
+  body.tv-mode .qtr-strip-label{font-size:11px}
+
   /* Normal mode: stack vertically (team battle on top, leaderboard below) */
   .tv-layout{display:flex;flex-direction:column-reverse;gap:20px}
   .tv-right{order:2}
@@ -301,6 +319,7 @@
         <div id="leaderboard"></div>
       </div>
       <div class="tv-right">
+        <div id="pgdQtrSummary"></div>
         <div class="team-battle" id="teamBattle"></div>
       </div>
     </div>
@@ -1160,6 +1179,25 @@ function buildQuarter(){
   window._qtrBoard = board;
   window._qtrTeamScores = teamScores;
   window._qtrLabel = qLabel;
+
+  // Populate the quarter summary strip on the Pipeline Gen Day tab
+  const stripEl = document.getElementById("pgdQtrSummary");
+  if(stripEl){
+    let stripHtml = `<div class="qtr-strip">`;
+    PGD_TEAMS.forEach(t=>{
+      const sc = teamScores[t.name];
+      stripHtml += `
+        <div class="qtr-strip-card ${t.cssClass}">
+          <div>
+            <div class="qtr-strip-name">${t.name}</div>
+            <div class="qtr-strip-label">${qLabel} total</div>
+          </div>
+          <div class="qtr-strip-pts">${sc.pts}</div>
+        </div>`;
+    });
+    stripHtml += `</div>`;
+    stripEl.innerHTML = stripHtml;
+  }
 }
 
 // ---------- Quarter Excel Download ----------
