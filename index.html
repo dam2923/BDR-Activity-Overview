@@ -60,6 +60,8 @@
   .red-flag-item .flag-icon{margin-right:6px}
   .red-flag-item .flag-name{color:#fecaca;font-weight:600}
   .red-flag-item .flag-detail{color:#d4a0a0}
+  @keyframes lb-slide-in{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+  .lb-animate{animation:lb-slide-in .35s ease-out both}
   td.low-vol{color:#f87171;font-weight:600}
   td.declining{color:#fb923c}
   .rank-medal{font-size:14px;margin-right:2px}
@@ -107,6 +109,7 @@
 
   /* Pipeline Gen Day header */
   .pgd-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px}
+  .pgd-timeframe{display:flex;gap:4px;flex-wrap:wrap}
   .pgd-title{font-size:22px;font-weight:700}
   .pgd-subtitle{color:var(--muted);font-size:13px;margin-top:2px}
   .pgd-rules{background:var(--panel2);border:1px solid var(--border);border-radius:10px;padding:14px 18px;font-size:13px;color:var(--muted);margin-bottom:20px;line-height:1.6}
@@ -330,8 +333,17 @@
         <div class="pgd-title" id="pgdTitle">Today's Rankings</div>
         <div class="pgd-subtitle" id="pgdSubtitle"></div>
       </div>
-      <button class="tv-btn" id="downloadXlsx">&#x1F4E5; Download Excel</button>
-      <button class="tv-btn" id="tvModeBtn">&#x1F4FA; TV Mode</button>
+      <div class="pgd-timeframe" id="pgdTimeframe">
+        <button class="btn on" data-pgd-range="today">Today</button>
+        <button class="btn" data-pgd-range="month">This Month</button>
+        <button class="btn" data-pgd-range="prev-month">Prev Month</button>
+        <button class="btn" data-pgd-range="quarter">Quarter</button>
+        <button class="btn" data-pgd-range="fy-ytd">FY YTD</button>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="tv-btn" id="downloadXlsx">&#x1F4E5; Download Excel</button>
+        <button class="tv-btn" id="tvModeBtn">&#x1F4FA; TV Mode</button>
+      </div>
     </div>
 
     <div class="tv-layout">
@@ -345,21 +357,24 @@
       </div>
     </div>
     <div class="pgd-rules pgd-rules-bottom">
-      <strong>Scoring:</strong> Connected call (15s+, not voicemail) = <strong>1 point</strong> · Meeting booked (within next 3 weeks) = <strong>20 points</strong>
+      <strong>Scoring:</strong> Connected call (15s+, not voicemail) = <strong>1 point</strong> · Deal created = <strong>20 points</strong>
     </div>
   </div>
 
   <!-- ========== TAB 3: QUARTER ========== -->
   <div class="tab-panel" id="tab-quarter">
-    <div class="pgd-rules">
-      <strong>Scoring:</strong> Connected call (15s+, not voicemail) = <strong>1 point</strong> · Meeting booked (within next 3 weeks) = <strong>20 points</strong>
-    </div>
     <div class="pgd-header">
       <div>
         <div class="pgd-title" id="qtrTitle">Quarter Leaderboard</div>
         <div class="pgd-subtitle" id="qtrSubtitle"></div>
       </div>
-      <div>
+      <div class="pgd-timeframe" id="qtrTimeframe">
+        <button class="btn" data-qtr-range="month">This Month</button>
+        <button class="btn" data-qtr-range="prev-month">Prev Month</button>
+        <button class="btn on" data-qtr-range="quarter">Quarter</button>
+        <button class="btn" data-qtr-range="fy-ytd">FY YTD</button>
+      </div>
+      <div style="display:flex;gap:8px">
         <button class="tv-btn" id="downloadQtrXlsx">&#x1F4E5; Download Excel</button>
         <button class="tv-btn" id="tvModeBtnQtr">&#x1F4FA; TV Mode</button>
       </div>
@@ -535,7 +550,7 @@ function loadData(){
     .then(d => { RAW = d; build(); buildLeaderboard(); buildQuarter(); })
     .catch(err => {
       showBanner("Could not load data/data.json — showing empty dashboard.");
-      RAW = { rows: [], meetings: [], generated_at: null };
+      RAW = { rows: [], deals: [], generated_at: null };
       build(); buildLeaderboard(); buildQuarter();
     });
 }
@@ -750,21 +765,21 @@ function render(){
     return acc + last7.reduce((a,b)=>a+b,0);
   }, 0);
 
-  // Count meetings in range for KPI
-  let totalMeetingsInRange = 0;
-  if(RAW.meetings){
+  // Count deals in range for KPI
+  let totalDealsInRange = 0;
+  if(RAW.deals){
     const rs = iso(rangeStart), re = iso(rangeEnd);
     const shownNames = new Set(shown.map(r=>r.name));
-    RAW.meetings.forEach(m=>{
-      if(m.booked_date && m.booked_date >= rs && m.booked_date <= re && shownNames.has(m.rep))
-        totalMeetingsInRange++;
+    RAW.deals.forEach(d=>{
+      if(d.created_date && d.created_date >= rs && d.created_date <= re && shownNames.has(d.rep))
+        totalDealsInRange++;
     });
   }
   document.getElementById("kpis").innerHTML = `
     <div class="kpi"><div class="v">${totalCalls.toLocaleString()}</div><div class="l">Total calls (in range)</div></div>
     <div class="kpi"><div class="v">${last7Total.toLocaleString()}</div><div class="l">Last 7 weekdays in range</div></div>
     <div class="kpi"><div class="v">${avgPerDay}</div><div class="l">Avg calls / rep / day</div></div>
-    <div class="kpi"><div class="v">${totalMeetingsInRange}</div><div class="l">Meetings booked (in range)</div></div>
+    <div class="kpi"><div class="v">${totalDealsInRange}</div><div class="l">Deals created (in range)</div></div>
   `;
 
   const maxTicks = days.length > 120 ? 10 : (days.length > 40 ? 12 : 14);
@@ -805,23 +820,20 @@ function render(){
     }
   }});
 
-  // ---------- Meetings by week ----------
-  const meetingsByWeek = {};  // weekKey -> { repName: count }
-  const meetingsByRep = {};   // repName -> total in range
-  if(RAW.meetings){
+  // ---------- Deals by week ----------
+  const dealsByWeek = {};  // weekKey -> { repName: count }
+  if(RAW.deals){
     const rangeStartIso = iso(rangeStart);
     const rangeEndIso = iso(rangeEnd);
-    RAW.meetings.forEach(m=>{
-      if(!m.booked_date) return;
-      if(m.booked_date < rangeStartIso || m.booked_date > rangeEndIso) return;
-      const rep = m.rep;
+    RAW.deals.forEach(d=>{
+      if(!d.created_date) return;
+      if(d.created_date < rangeStartIso || d.created_date > rangeEndIso) return;
+      const rep = d.rep;
       if(!shown.find(r=>r.name===rep)) return;
-      // Find which week this meeting falls in
-      const mDate = new Date(m.booked_date+"T00:00:00");
-      const wKey = iso(mondayOf(mDate));
-      if(!meetingsByWeek[wKey]) meetingsByWeek[wKey] = {};
-      meetingsByWeek[wKey][rep] = (meetingsByWeek[wKey][rep]||0) + 1;
-      meetingsByRep[rep] = (meetingsByRep[rep]||0) + 1;
+      const dDate = new Date(d.created_date+"T00:00:00");
+      const wKey = iso(mondayOf(dDate));
+      if(!dealsByWeek[wKey]) dealsByWeek[wKey] = {};
+      dealsByWeek[wKey][rep] = (dealsByWeek[wKey][rep]||0) + 1;
     });
   }
 
@@ -913,35 +925,87 @@ function render(){
     });
     html+=`<td><strong>${rowTotal}</strong></td></tr>`;
 
-    // Meetings row for this week
-    const wMeetings = meetingsByWeek[w.key] || {};
-    let meetTotal = 0;
-    html+=`<tr class="weekly-meetings-row"><td style="font-size:11px">Meetings booked</td>`;
+    // Deals row for this week
+    const wDeals = dealsByWeek[w.key] || {};
+    let dealTotal = 0;
+    html+=`<tr class="weekly-meetings-row"><td style="font-size:11px">Deals created</td>`;
     shown.forEach(r=>{
-      const mc = wMeetings[r.name] || 0;
-      meetTotal += mc;
-      html+=`<td>${mc || "—"}</td>`;
+      const dc = wDeals[r.name] || 0;
+      dealTotal += dc;
+      html+=`<td>${dc || "—"}</td>`;
     });
-    html+=`<td><strong>${meetTotal || "—"}</strong></td></tr>`;
+    html+=`<td><strong>${dealTotal || "—"}</strong></td></tr>`;
   });
   html+="</tbody>"; t.innerHTML = html;
 }
 
-// ---------- Pipeline Generation Day Leaderboard ----------
-function buildLeaderboard(){
-  if(!RAW) return;
+// ---------- Shared date-range helpers ----------
+let pgdRange = "today";
+let qtrRange = "quarter";
+
+function getMonthStart(d){ return iso(new Date(d.getFullYear(), d.getMonth(), 1)) }
+function getPrevMonthRange(){
+  const d = new Date();
+  const s = new Date(d.getFullYear(), d.getMonth()-1, 1);
+  const e = new Date(d.getFullYear(), d.getMonth(), 0); // last day of prev month
+  return [iso(s), iso(e)];
+}
+function getFYStart(){
+  // UK financial year: April 1
+  const d = new Date();
+  const apr = d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear()-1;
+  return iso(new Date(apr, 3, 1));
+}
+function getRangeForKey(key){
   const todayStr = iso(new Date());
+  switch(key){
+    case "today": return [todayStr, todayStr];
+    case "month": return [getMonthStart(new Date()), todayStr];
+    case "prev-month": return getPrevMonthRange();
+    case "quarter": return [getQuarterStart(), todayStr];
+    case "fy-ytd": return [getFYStart(), todayStr];
+    default: return [todayStr, todayStr];
+  }
+}
+function rangeLabelForKey(key){
+  const [s, e] = getRangeForKey(key);
+  const sf = new Date(s+"T00:00:00"), ef = new Date(e+"T00:00:00");
+  const fmt = d=>d.toLocaleDateString(undefined,{day:"numeric",month:"short",year:"numeric"});
+  switch(key){
+    case "today": return new Date().toLocaleDateString(undefined,{weekday:"long",day:"numeric",month:"long",year:"numeric"});
+    case "month": return fmt(sf) + " — Today";
+    case "prev-month": return fmt(sf) + " — " + fmt(ef);
+    case "quarter": { const q="Q"+((Math.floor(sf.getMonth()/3))+1); return q+" "+sf.getFullYear()+" · "+fmt(sf)+" — Today"; }
+    case "fy-ytd": return "FY " + sf.getFullYear()+"/"+(sf.getFullYear()+1).toString().slice(-2) + " · " + fmt(sf) + " — Today";
+    default: return "";
+  }
+}
+function titleForKey(key){
+  switch(key){
+    case "today": return "Today's Rankings";
+    case "month": return new Date().toLocaleDateString(undefined,{month:"long"}) + " Rankings";
+    case "prev-month": {
+      const d = new Date(); d.setMonth(d.getMonth()-1);
+      return d.toLocaleDateString(undefined,{month:"long"}) + " Rankings";
+    }
+    case "quarter": {
+      const q = Math.floor(new Date().getMonth()/3)+1;
+      return "Q"+q+" "+new Date().getFullYear()+" Leaderboard";
+    }
+    case "fy-ytd": return "FY YTD Leaderboard";
+    default: return "Rankings";
+  }
+}
+
+// ---------- Shared scoring ----------
+function scoreForRange(startDate, endDate){
   const visibleReps = getVisibleReps();
   const visibleNames = new Set(visibleReps.map(r=>r.name));
-  const now = new Date();
-  const threeWeeks = new Date(now); threeWeeks.setDate(threeWeeks.getDate() + 21);
-
-  // Count ALL calls today (for display) and qualifying calls (for points)
-  const totalCallCounts = {};  // all calls regardless
+  const totalCallCounts = {};
   const callPoints = {};
-  const callCounts = {};       // qualifying connected calls only
+  const callCounts = {};
   (RAW.rows || []).forEach(row=>{
-    if(row.date !== todayStr) return;
+    if(row.date < startDate || row.date > endDate) return;
     if(!visibleNames.has(row.rep)) return;
     totalCallCounts[row.rep] = (totalCallCounts[row.rep]||0) + 1;
     const dur = row.dur || 0;
@@ -951,56 +1015,47 @@ function buildLeaderboard(){
       callCounts[row.rep] = (callCounts[row.rep]||0) + 1;
     }
   });
-
-  // Score meetings booked today with meeting_date within 3 weeks
-  const meetingPoints = {};
-  const meetingCounts = {};
-  (RAW.meetings || []).forEach(m=>{
-    if(m.booked_date !== todayStr) return;
-    if(!visibleNames.has(m.rep)) return;
-    // Check meeting_date is within 3 weeks
-    const mtgDate = new Date(m.meeting_date + "T00:00:00");
-    if(mtgDate >= now && mtgDate <= threeWeeks){
-      meetingPoints[m.rep] = (meetingPoints[m.rep]||0) + 20;
-      meetingCounts[m.rep] = (meetingCounts[m.rep]||0) + 1;
-    }
+  const dealPoints = {};
+  const dealCounts = {};
+  (RAW.deals || []).forEach(d=>{
+    if(!d.created_date) return;
+    if(d.created_date < startDate || d.created_date > endDate) return;
+    if(!visibleNames.has(d.rep)) return;
+    dealPoints[d.rep] = (dealPoints[d.rep]||0) + 20;
+    dealCounts[d.rep] = (dealCounts[d.rep]||0) + 1;
   });
-
-  // Build leaderboard
-  const board = visibleReps.map(r=>{
+  return visibleReps.map(r=>{
     const totalCalls = totalCallCounts[r.name] || 0;
     const calls = callCounts[r.name] || 0;
-    const meetings = meetingCounts[r.name] || 0;
-    const pts = (callPoints[r.name]||0) + (meetingPoints[r.name]||0);
-    return { name: r.name, team: r.team, color: r.color, totalCalls, calls, meetings, pts };
+    const deals = dealCounts[r.name] || 0;
+    const pts = (callPoints[r.name]||0) + (dealPoints[r.name]||0);
+    return { name: r.name, team: r.team, color: r.color, totalCalls, calls, deals, pts };
   }).sort((a,b) => b.pts - a.pts || b.calls - a.calls);
+}
 
-  // Subtitle
-  const sub = document.getElementById("pgdSubtitle");
-  const dateOpts = {weekday:"long", day:"numeric", month:"long", year:"numeric"};
-  sub.textContent = new Date().toLocaleDateString(undefined, dateOpts);
-  if(RAW.generated_at){
-    const dt = new Date(RAW.generated_at);
-    sub.textContent += " · Data as of " + dt.toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"});
-  }
+// ---------- Shared leaderboard renderer ----------
+function renderBoard(board, elId, teamBattleId, emptyMsg){
+  const repTeamMap = {};
+  PGD_TEAMS.forEach(t=>t.members.forEach(m=>{ repTeamMap[m.rep] = t.name }));
 
-  // ── Team battle cards ──
+  // Team scores
   const teamScores = {};
   PGD_TEAMS.forEach(t=>{
     const memberNames = new Set(t.members.map(m=>m.rep));
-    let totalPts=0, totalAllCalls=0, totalQualCalls=0, totalMeetings=0;
+    let totalPts=0, totalAllCalls=0, totalQualCalls=0, totalDeals=0;
     board.forEach(b=>{
       if(memberNames.has(b.name)){
         totalPts += b.pts;
         totalAllCalls += b.totalCalls;
         totalQualCalls += b.calls;
-        totalMeetings += b.meetings;
+        totalDeals += b.deals;
       }
     });
-    teamScores[t.name] = {pts:totalPts, allCalls:totalAllCalls, qualCalls:totalQualCalls, meetings:totalMeetings};
+    teamScores[t.name] = {pts:totalPts, allCalls:totalAllCalls, qualCalls:totalQualCalls, deals:totalDeals};
   });
 
-  const battleEl = document.getElementById("teamBattle");
+  // Team battle cards
+  const battleEl = document.getElementById(teamBattleId);
   let battleHtml = "";
   PGD_TEAMS.forEach((t,i)=>{
     const sc = teamScores[t.name];
@@ -1011,7 +1066,6 @@ function buildLeaderboard(){
       const pts = pb ? pb.pts : 0;
       return `${role}${firstName} <span style="color:var(--accent)">${pts} pts</span>`;
     }).join("<br>");
-
     battleHtml += `
       <div class="team-card ${t.cssClass}">
         <div class="team-card-name">Team ${t.name}</div>
@@ -1020,7 +1074,7 @@ function buildLeaderboard(){
         <div class="team-card-stats">
           <div class="team-card-stat"><div class="v">${sc.allCalls}</div><div class="l">All Calls</div></div>
           <div class="team-card-stat"><div class="v">${sc.qualCalls}</div><div class="l">Connected 15s+</div></div>
-          <div class="team-card-stat"><div class="v">${sc.meetings}</div><div class="l">Meetings</div></div>
+          <div class="team-card-stat"><div class="v">${sc.deals}</div><div class="l">Deals</div></div>
         </div>
         <div class="team-card-roster">${rosterHtml}</div>
       </div>`;
@@ -1028,17 +1082,12 @@ function buildLeaderboard(){
   });
   battleEl.innerHTML = battleHtml;
 
-  // ── Individual leaderboard ──
-  const el = document.getElementById("leaderboard");
+  // Individual leaderboard with animation
+  const el = document.getElementById(elId);
   if(board.every(b => b.pts === 0)){
-    el.innerHTML = `<div class="lb-empty">No qualifying activity yet today. Connected calls (15s+) earn 1 point, meetings booked (within 3 weeks) earn 20 points.</div>`;
-    return;
+    el.innerHTML = `<div class="lb-empty">${emptyMsg}</div>`;
+    return {board, teamScores};
   }
-
-  // Find which PGD team each person is on
-  const repTeamMap = {};
-  PGD_TEAMS.forEach(t=>t.members.forEach(m=>{ repTeamMap[m.rep] = t.name }));
-
   let html = "";
   board.forEach((b,i)=>{
     const rankClass = i===0 ? "gold" : i===1 ? "silver" : i===2 ? "bronze" : "";
@@ -1046,24 +1095,13 @@ function buildLeaderboard(){
     const pgdTeam = repTeamMap[b.name] || "";
     const teamBadge = pgdTeam ? `<span class="lb-team-badge ${pgdTeam.toLowerCase()}" style="margin-left:6px">${pgdTeam}</span>` : "";
     html += `
-      <div class="lb-row">
+      <div class="lb-row lb-animate" data-rep="${b.name}" style="animation-delay:${i*0.05}s">
         <div class="lb-rank ${rankClass}">${medal || (i+1)}</div>
-        <div class="lb-name">
-          ${b.name}${teamBadge}
-        </div>
+        <div class="lb-name">${b.name}${teamBadge}</div>
         <div class="lb-stats">
-          <div class="lb-stat">
-            <div class="v">${b.totalCalls}</div>
-            <div class="l">All Calls</div>
-          </div>
-          <div class="lb-stat">
-            <div class="v">${b.calls}</div>
-            <div class="l">Connected (${b.calls} pts)</div>
-          </div>
-          <div class="lb-stat">
-            <div class="v">${b.meetings}</div>
-            <div class="l">Meetings (${b.meetings * 20} pts)</div>
-          </div>
+          <div class="lb-stat"><div class="v">${b.totalCalls}</div><div class="l">All Calls</div></div>
+          <div class="lb-stat"><div class="v">${b.calls}</div><div class="l">Connected (${b.calls} pts)</div></div>
+          <div class="lb-stat"><div class="v">${b.deals}</div><div class="l">Deals (${b.deals * 20} pts)</div></div>
         </div>
         <div>
           <div class="lb-points">${b.pts}</div>
@@ -1072,11 +1110,40 @@ function buildLeaderboard(){
       </div>`;
   });
   el.innerHTML = html;
-
-  // Store for Excel export
-  window._pgdBoard = board;
-  window._pgdTeamScores = teamScores;
+  return {board, teamScores};
 }
+
+// ---------- Pipeline Generation Day Leaderboard ----------
+function buildLeaderboard(){
+  if(!RAW) return;
+  const [startDate, endDate] = getRangeForKey(pgdRange);
+  const board = scoreForRange(startDate, endDate);
+
+  // Title and subtitle
+  document.getElementById("pgdTitle").textContent = titleForKey(pgdRange);
+  const sub = document.getElementById("pgdSubtitle");
+  sub.textContent = rangeLabelForKey(pgdRange);
+  if(RAW.generated_at){
+    const dt = new Date(RAW.generated_at);
+    sub.textContent += " · Data as of " + dt.toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"});
+  }
+
+  const result = renderBoard(board, "leaderboard", "teamBattle",
+    "No qualifying activity yet. Connected calls (15s+) earn 1 point, deals created earn 20 points.");
+
+  window._pgdBoard = board;
+  window._pgdTeamScores = result.teamScores;
+}
+
+// Timeframe buttons for Pipeline tab
+document.getElementById("pgdTimeframe").addEventListener("click",(e)=>{
+  const btn = e.target.closest("[data-pgd-range]");
+  if(!btn) return;
+  pgdRange = btn.dataset.pgdRange;
+  document.querySelectorAll("#pgdTimeframe .btn").forEach(b=>b.classList.remove("on"));
+  btn.classList.add("on");
+  buildLeaderboard();
+});
 
 // ---------- Excel Download ----------
 document.getElementById("downloadXlsx").addEventListener("click", ()=>{
@@ -1092,7 +1159,7 @@ document.getElementById("downloadXlsx").addEventListener("click", ()=>{
   const repTeamMap = {};
   PGD_TEAMS.forEach(t => t.members.forEach(m => { repTeamMap[m.rep] = t.name }));
 
-  const lbHeader = ["Rank", "Name", "Team", "PGD Team", "All Calls", "Connected Calls (15s+)", "Call Points", "Meetings Booked", "Meeting Points", "Total Points"];
+  const lbHeader = ["Rank", "Name", "Team", "PGD Team", "All Calls", "Connected Calls (15s+)", "Call Points", "Deals Created", "Deal Points", "Total Points"];
   const lbRows = board.map((b, i) => [
     i + 1,
     b.name,
@@ -1101,8 +1168,8 @@ document.getElementById("downloadXlsx").addEventListener("click", ()=>{
     b.totalCalls,
     b.calls,
     b.calls,
-    b.meetings,
-    b.meetings * 20,
+    b.deals,
+    b.deals * 20,
     b.pts
   ]);
   const lbData = [
@@ -1126,17 +1193,17 @@ document.getElementById("downloadXlsx").addEventListener("click", ()=>{
     ["Pipeline Generation Day — " + dateLabel],
     [],
     ["Team Summary"],
-    ["Team", "Total Points", "Connected Calls", "Call Points", "Meetings Booked", "Meeting Points"],
+    ["Team", "Total Points", "Connected Calls", "Call Points", "Deals Created", "Deal Points"],
   ];
   PGD_TEAMS.forEach(t => {
     const sc = teamScores[t.name];
     teamRows.push([
       "Team " + t.name,
       sc.pts,
-      sc.calls,
-      sc.calls,
-      sc.meetings,
-      sc.meetings * 20
+      sc.qualCalls,
+      sc.qualCalls,
+      sc.deals,
+      sc.deals * 20
     ]);
   });
   teamRows.push([]);
@@ -1169,90 +1236,44 @@ function getQuarterStart(){
 
 function buildQuarter(){
   if(!RAW) return;
-  const qStart = getQuarterStart();
-  const todayStr = iso(new Date());
-  const visibleReps = getVisibleReps();
-  const visibleNames = new Set(visibleReps.map(r=>r.name));
-  const now = new Date();
+  const [startDate, endDate] = getRangeForKey(qtrRange);
+  const board = scoreForRange(startDate, endDate);
 
-  // Count all calls and qualifying calls in the quarter
-  const totalCallCounts = {};
-  const callPoints = {};
-  const callCounts = {};
-  (RAW.rows || []).forEach(row=>{
-    if(row.date < qStart || row.date > todayStr) return;
-    if(!visibleNames.has(row.rep)) return;
-    totalCallCounts[row.rep] = (totalCallCounts[row.rep]||0) + 1;
-    const dur = row.dur || 0;
-    const disp = (row.disp || "").toLowerCase();
-    if(dur >= 15 && !disp.includes("voicemail")){
-      callPoints[row.rep] = (callPoints[row.rep]||0) + 1;
-      callCounts[row.rep] = (callCounts[row.rep]||0) + 1;
-    }
-  });
-
-  // Meetings booked this quarter where meeting_date was within 3 weeks of booking
-  const meetingPoints = {};
-  const meetingCounts = {};
-  (RAW.meetings || []).forEach(m=>{
-    if(m.booked_date < qStart || m.booked_date > todayStr) return;
-    if(!visibleNames.has(m.rep)) return;
-    if(!m.meeting_date) return;
-    const bookedDate = new Date(m.booked_date + "T00:00:00");
-    const mtgDate = new Date(m.meeting_date + "T00:00:00");
-    const threeWeeksLater = new Date(bookedDate);
-    threeWeeksLater.setDate(threeWeeksLater.getDate() + 21);
-    if(mtgDate >= bookedDate && mtgDate <= threeWeeksLater){
-      meetingPoints[m.rep] = (meetingPoints[m.rep]||0) + 20;
-      meetingCounts[m.rep] = (meetingCounts[m.rep]||0) + 1;
-    }
-  });
-
-  const board = visibleReps.map(r=>{
-    const totalCalls = totalCallCounts[r.name] || 0;
-    const calls = callCounts[r.name] || 0;
-    const meetings = meetingCounts[r.name] || 0;
-    const pts = (callPoints[r.name]||0) + (meetingPoints[r.name]||0);
-    return { name: r.name, team: r.team, color: r.color, totalCalls, calls, meetings, pts };
-  }).sort((a,b) => b.pts - a.pts || b.calls - a.calls);
-
-  // Subtitle
-  const qStartDate = new Date(qStart + "T00:00:00");
-  const qLabel = "Q" + (Math.floor(qStartDate.getMonth()/3)+1) + " " + qStartDate.getFullYear();
+  // Title and subtitle
+  document.getElementById("qtrTitle").textContent = titleForKey(qtrRange);
   const sub = document.getElementById("qtrSubtitle");
-  sub.textContent = qLabel + " · " + qStartDate.toLocaleDateString(undefined,{day:"numeric",month:"short"}) + " — Today";
+  sub.textContent = rangeLabelForKey(qtrRange);
   if(RAW.generated_at){
     const dt = new Date(RAW.generated_at);
     sub.textContent += " · Data as of " + dt.toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"});
   }
-  document.getElementById("qtrTitle").textContent = qLabel + " Leaderboard";
 
-  // Team battle cards
-  const teamScores = {};
-  PGD_TEAMS.forEach(t=>{
-    const memberNames = new Set(t.members.map(m=>m.rep));
-    let totalPts=0, totalAllCalls=0, totalQualCalls=0, totalMeetings=0;
-    board.forEach(b=>{
-      if(memberNames.has(b.name)){
-        totalPts += b.pts;
-        totalAllCalls += b.totalCalls;
-        totalQualCalls += b.calls;
-        totalMeetings += b.meetings;
-      }
-    });
-    teamScores[t.name] = {pts:totalPts, allCalls:totalAllCalls, qualCalls:totalQualCalls, meetings:totalMeetings};
-  });
+  const result = renderBoard(board, "qtrLeaderboard", "qtrTeamBattle",
+    "No qualifying activity yet for this period.");
+  const teamScores = result.teamScores;
 
   window._qtrBoard = board;
   window._qtrTeamScores = teamScores;
-  window._qtrLabel = qLabel;
+  window._qtrLabel = titleForKey(qtrRange);
 
-  // Populate the quarter summary strip on the Pipeline Gen Day tab (before early return)
+  // Populate the quarter summary strip on the Pipeline Gen Day tab
   const stripEl = document.getElementById("pgdQtrSummary");
   if(stripEl){
+    // Always use full quarter data for the strip (regardless of qtrRange)
+    const qBoard = scoreForRange(getQuarterStart(), iso(new Date()));
+    const qTeamScores = {};
+    PGD_TEAMS.forEach(t=>{
+      const memberNames = new Set(t.members.map(m=>m.rep));
+      let totalPts=0;
+      qBoard.forEach(b=>{ if(memberNames.has(b.name)) totalPts += b.pts; });
+      qTeamScores[t.name] = {pts:totalPts};
+    });
+    const q = Math.floor(new Date().getMonth()/3)+1;
+    const qLabel = "Q"+q+" "+new Date().getFullYear();
+
     let stripHtml = `<div class="qtr-strip">`;
     PGD_TEAMS.forEach(t=>{
-      const sc = teamScores[t.name];
+      const sc = qTeamScores[t.name];
       stripHtml += `
         <div class="qtr-strip-card ${t.cssClass}">
           <div>
@@ -1263,10 +1284,9 @@ function buildQuarter(){
         </div>`;
     });
     stripHtml += `</div>`;
-    // Top 2 individuals for the quarter
     const repTeamLookup = {};
     PGD_TEAMS.forEach(t=>t.members.forEach(m=>{ repTeamLookup[m.rep] = t.name }));
-    const top2 = board.slice(0,2);
+    const top2 = qBoard.slice(0,2);
     if(top2.length){
       const medals = ["&#x1F947;","&#x1F948;"];
       top2.forEach((b,i)=>{
@@ -1282,79 +1302,17 @@ function buildQuarter(){
     }
     stripEl.innerHTML = stripHtml;
   }
-
-  const battleEl = document.getElementById("qtrTeamBattle");
-  let battleHtml = "";
-  PGD_TEAMS.forEach((t,i)=>{
-    const sc = teamScores[t.name];
-    const rosterHtml = t.members.map(m=>{
-      const role = m.role ? `<span class="role">${m.role}</span> — ` : "";
-      const firstName = m.rep.split(" ")[0];
-      const pb = board.find(b=>b.name===m.rep);
-      const pts = pb ? pb.pts : 0;
-      return `${role}${firstName} <span style="color:var(--accent)">${pts} pts</span>`;
-    }).join("<br>");
-
-    battleHtml += `
-      <div class="team-card ${t.cssClass}">
-        <div class="team-card-name">Team ${t.name}</div>
-        <div class="team-card-points">${sc.pts}</div>
-        <div class="team-card-label">Total points</div>
-        <div class="team-card-stats">
-          <div class="team-card-stat"><div class="v">${sc.allCalls}</div><div class="l">All Calls</div></div>
-          <div class="team-card-stat"><div class="v">${sc.qualCalls}</div><div class="l">Connected 15s+</div></div>
-          <div class="team-card-stat"><div class="v">${sc.meetings}</div><div class="l">Meetings</div></div>
-        </div>
-        <div class="team-card-roster">${rosterHtml}</div>
-      </div>`;
-    if(i === 0) battleHtml += `<div class="team-vs"><span class="team-vs-text">VS</span></div>`;
-  });
-  battleEl.innerHTML = battleHtml;
-
-  // Individual leaderboard
-  const repTeamMap = {};
-  PGD_TEAMS.forEach(t=>t.members.forEach(m=>{ repTeamMap[m.rep] = t.name }));
-
-  const el = document.getElementById("qtrLeaderboard");
-  if(board.every(b => b.pts === 0)){
-    el.innerHTML = `<div class="lb-empty">No qualifying activity yet this quarter.</div>`;
-    return;
-  }
-
-  let html = "";
-  board.forEach((b,i)=>{
-    const rankClass = i===0 ? "gold" : i===1 ? "silver" : i===2 ? "bronze" : "";
-    const medal = i===0 ? "&#x1F947;" : i===1 ? "&#x1F948;" : i===2 ? "&#x1F949;" : "";
-    const pgdTeam = repTeamMap[b.name] || "";
-    const teamBadge = pgdTeam ? `<span class="lb-team-badge ${pgdTeam.toLowerCase()}" style="margin-left:6px">${pgdTeam}</span>` : "";
-    html += `
-      <div class="lb-row">
-        <div class="lb-rank ${rankClass}">${medal || (i+1)}</div>
-        <div class="lb-name">
-          ${b.name}${teamBadge}
-        </div>
-        <div class="lb-stats">
-          <div class="lb-stat">
-            <div class="v">${b.totalCalls}</div>
-            <div class="l">All Calls</div>
-          </div>
-          <div class="lb-stat">
-            <div class="v">${b.calls}</div>
-            <div class="l">Connected (${b.calls} pts)</div>
-          </div>
-          <div class="lb-stat">
-            <div class="v">${b.meetings}</div>
-            <div class="l">Meetings (${b.meetings * 20} pts)</div>
-          </div>
-        </div>
-        <div>
-          <div class="lb-points">${b.pts}</div>
-          <div class="lb-points-label">points</div>
-        </div>
-      </div>`;
-  });
-  el.innerHTML = html;
 }
+
+// Timeframe buttons for Quarter tab
+document.getElementById("qtrTimeframe").addEventListener("click",(e)=>{
+  const btn = e.target.closest("[data-qtr-range]");
+  if(!btn) return;
+  qtrRange = btn.dataset.qtrRange;
+  document.querySelectorAll("#qtrTimeframe .btn").forEach(b=>b.classList.remove("on"));
+  btn.classList.add("on");
+  buildQuarter();
+});
 
 // ---------- Quarter Excel Download ----------
 document.getElementById("downloadQtrXlsx").addEventListener("click", ()=>{
@@ -1368,17 +1326,17 @@ document.getElementById("downloadQtrXlsx").addEventListener("click", ()=>{
   const repTeamMap = {};
   PGD_TEAMS.forEach(t => t.members.forEach(m => { repTeamMap[m.rep] = t.name }));
 
-  const lbHeader = ["Rank", "Name", "Team", "PGD Team", "All Calls", "Connected Calls (15s+)", "Call Points", "Meetings Booked", "Meeting Points", "Total Points"];
-  const lbRows = board.map((b, i) => [i+1, b.name, b.team, repTeamMap[b.name]||"", b.totalCalls, b.calls, b.calls, b.meetings, b.meetings*20, b.pts]);
+  const lbHeader = ["Rank", "Name", "Team", "PGD Team", "All Calls", "Connected Calls (15s+)", "Call Points", "Deals Created", "Deal Points", "Total Points"];
+  const lbRows = board.map((b, i) => [i+1, b.name, b.team, repTeamMap[b.name]||"", b.totalCalls, b.calls, b.calls, b.deals||0, (b.deals||0)*20, b.pts]);
   const lbData = [[qLabel + " Leaderboard"], [], ["Individual Leaderboard"], lbHeader, ...lbRows];
   const ws1 = XLSX.utils.aoa_to_sheet(lbData);
   ws1["!cols"] = [{wch:6},{wch:28},{wch:6},{wch:12},{wch:12},{wch:22},{wch:12},{wch:18},{wch:15},{wch:14}];
   XLSX.utils.book_append_sheet(wb, ws1, "Leaderboard");
 
-  const teamRows = [[qLabel + " — Team Summary"], [], ["Team", "Total Points", "All Calls", "Connected 15s+", "Meetings", "Meeting Points"]];
+  const teamRows = [[qLabel + " — Team Summary"], [], ["Team", "Total Points", "All Calls", "Connected 15s+", "Deals Created", "Deal Points"]];
   PGD_TEAMS.forEach(t => {
     const sc = teamScores[t.name];
-    teamRows.push(["Team "+t.name, sc.pts, sc.allCalls, sc.qualCalls, sc.meetings, sc.meetings*20]);
+    teamRows.push(["Team "+t.name, sc.pts, sc.allCalls, sc.qualCalls, sc.deals||0, (sc.deals||0)*20]);
   });
   teamRows.push([], ["Team Rosters"]);
   PGD_TEAMS.forEach(t => {
