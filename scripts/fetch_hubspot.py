@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 """
-Fetch HubSpot call activity + meetings via v3 search endpoints and write
+Fetch HubSpot call activity + deals via v3 search endpoints and write
 data/data.json in the shape the dashboard expects:
 
 {
   "generated_at": "...",
   "rows": [{"date": "YYYY-MM-DD", "rep": "Name", "dur": 45, "disp": "connected"}, ...],
-  "meetings": [{"booked_date": "YYYY-MM-DD", "meeting_date": "YYYY-MM-DD", "rep": "Name"}, ...],
+  "deals": [{"created_date": "YYYY-MM-DD", "rep": "Name", "deal_name": "..."}, ...],
   "stats": { ... }
 }
 
 rows[]  — one entry per call. `dur` is duration in seconds, `disp` is disposition label.
-meetings[] — one entry per meeting engagement. `booked_date` is when it was created,
-             `meeting_date` is the scheduled start (used for the 3-week rule on Pipeline Gen Day).
+deals[] — one entry per deal. Attributed to whoever CREATED them (hs_created_by_user_id).
 
 Required HubSpot Private App scopes:
   - crm.objects.contacts.read  (grants v3 calls search on this portal)
   - crm.objects.owners.read
+  - crm.objects.deals.read
 
 Required env:
   HUBSPOT_TOKEN
@@ -193,39 +193,38 @@ def search_calls_window(start_dt, end_dt, owner_ids):
     return rows
 
 
-# ── Meetings ─────────────────────────────────────────────────────────
+# ── Deals ────────────────────────────────────────────────────────────
 
-def search_meetings_window(start_dt, end_dt):
-    """Paginate /crm/v3/objects/meetings/search for meetings created in a window.
-    Does NOT filter by owner — we attribute meetings to whoever CREATED them
+def search_deals_window(start_dt, end_dt):
+    """Paginate /crm/v3/objects/deals/search for deals created in a window.
+    Does NOT filter by owner — we attribute deals to whoever CREATED them
     (hs_created_by_user_id), not the owner. Filtered to known reps later."""
     rows = []
     after = None
     filters = [
-        {"propertyName": "hs_createdate", "operator": "GTE", "value": iso_ms(start_dt)},
-        {"propertyName": "hs_createdate", "operator": "LT",  "value": iso_ms(end_dt)},
+        {"propertyName": "createdate", "operator": "GTE", "value": iso_ms(start_dt)},
+        {"propertyName": "createdate", "operator": "LT",  "value": iso_ms(end_dt)},
     ]
     while True:
         body = {
             "filterGroups": [{"filters": filters}],
-            "sorts": [{"propertyName": "hs_createdate", "direction": "ASCENDING"}],
-            "properties": ["hs_createdate", "hubspot_owner_id",
-                           "hs_meeting_start_time", "hs_created_by_user_id"],
+            "sorts": [{"propertyName": "createdate", "direction": "ASCENDING"}],
+            "properties": ["createdate", "hubspot_owner_id",
+                           "dealname", "hs_created_by_user_id"],
             "limit": 100,
         }
         if after: body["after"] = after
-        data = http_post(f"{BASE}/crm/v3/objects/meetings/search", body)
+        data = http_post(f"{BASE}/crm/v3/objects/deals/search", body)
         for r in data.get("results", []):
             p = r.get("properties", {})
-            created = p.get("hs_createdate")
+            created = p.get("createdate")
             created_by = p.get("hs_created_by_user_id") or ""
-            start_time = p.get("hs_meeting_start_time")
             if created:
                 rows.append({
                     "created": created,
                     "created_by_user_id": str(created_by),
                     "owner_id": str(p.get("hubspot_owner_id") or ""),
-                    "start_time": start_time or "",
+                    "deal_name": (p.get("dealname") or "").strip(),
                 })
         after = data.get("paging", {}).get("next", {}).get("after")
         if not after: break
@@ -252,7 +251,7 @@ def main():
     else:
         print("No REP_NAMES set — fetching all reps\n", flush=True)
 
-    # Build set of allowed rep names for meeting filtering
+    # Build set of allowed rep names for deal filtering
     allowed_names = {n.strip().lower() for n in REP_NAMES} if REP_NAMES else None
 
     # ── Fetch calls ──
@@ -293,65 +292,55 @@ def main():
             "disp": c["disp"],
         })
 
-    # ── Fetch meetings (last 90 days only — enough for Pipeline Gen Day) ──
-    # Meetings are fetched WITHOUT owner filter because we attribute them to the
+    # ── Fetch deals ──
+    # Deals are fetched WITHOUT owner filter because we attribute them to the
     # CREATOR (hs_created_by_user_id), not the owner.
-    meeting_lookback = min(LOOKBACK_DAYS, 90)
-    meeting_start = now_utc - timedelta(days=meeting_lookback)
-    print(f"\nFetching meetings created in last {meeting_lookback} days…", flush=True)
-    all_meetings_raw = []
-    window_start = meeting_start
+    deal_lookback = min(LOOKBACK_DAYS, 420)
+    deal_start = now_utc - timedelta(days=deal_lookback)
+    print(f"\nFetching deals created in last {deal_lookback} days…", flush=True)
+    all_deals_raw = []
+    window_start = deal_start
     while window_start < now_utc:
         window_end = min(window_start + timedelta(days=CHUNK_DAYS), now_utc)
-        batch = search_meetings_window(window_start, window_end)
-        print(f"  {window_start.date()} → {window_end.date()}: {len(batch)} meetings",
+        batch = search_deals_window(window_start, window_end)
+        print(f"  {window_start.date()} → {window_end.date()}: {len(batch)} deals",
               flush=True)
-        all_meetings_raw.extend(batch)
+        all_deals_raw.extend(batch)
         window_start = window_end
-    print(f"Total raw meetings: {len(all_meetings_raw)}", flush=True)
+    print(f"Total raw deals: {len(all_deals_raw)}", flush=True)
 
-    out_meetings = []
-    skipped_meetings_no_creator = 0
-    skipped_meetings_not_rep = 0
-    for m in all_meetings_raw:
+    out_deals = []
+    skipped_deals_no_creator = 0
+    skipped_deals_not_rep = 0
+    for d in all_deals_raw:
         # Attribute to creator first, fall back to owner
-        creator_uid = m.get("created_by_user_id", "")
+        creator_uid = d.get("created_by_user_id", "")
         name = users.get(creator_uid) if creator_uid else None
         if not name:
-            # Fall back to owner_id
-            name = owners.get(m.get("owner_id", ""))
+            name = owners.get(d.get("owner_id", ""))
         if not name:
-            skipped_meetings_no_creator += 1
+            skipped_deals_no_creator += 1
             continue
-        # If filtering by rep names, skip meetings not created by our reps
         if allowed_names and name.strip().lower() not in allowed_names:
-            skipped_meetings_not_rep += 1
+            skipped_deals_not_rep += 1
             continue
 
         try:
-            created_utc = datetime.fromisoformat(m["created"].replace("Z", "+00:00"))
+            created_utc = datetime.fromisoformat(d["created"].replace("Z", "+00:00"))
         except ValueError:
             continue
         created_local = created_utc.astimezone(TZ)
-        booked_date = created_local.strftime("%Y-%m-%d")
+        created_date = created_local.strftime("%Y-%m-%d")
 
-        meeting_date = ""
-        if m["start_time"]:
-            try:
-                mt_utc = datetime.fromisoformat(m["start_time"].replace("Z", "+00:00"))
-                meeting_date = mt_utc.astimezone(TZ).strftime("%Y-%m-%d")
-            except ValueError:
-                pass
-
-        out_meetings.append({
-            "booked_date": booked_date,
-            "meeting_date": meeting_date,
+        out_deals.append({
+            "created_date": created_date,
             "rep": name,
+            "deal_name": d.get("deal_name", ""),
         })
 
-    print(f"  Kept {len(out_meetings)} meetings "
-          f"(skipped {skipped_meetings_no_creator} no-creator, "
-          f"{skipped_meetings_not_rep} not-in-rep-list)", flush=True)
+    print(f"  Kept {len(out_deals)} deals "
+          f"(skipped {skipped_deals_no_creator} no-creator, "
+          f"{skipped_deals_not_rep} not-in-rep-list)", flush=True)
 
     # ── Write output ──
     payload = {
@@ -360,14 +349,14 @@ def main():
         "lookback_days": LOOKBACK_DAYS,
         "reps_filter": REP_NAMES or None,
         "rows": out_rows,
-        "meetings": out_meetings,
+        "deals": out_deals,
         "stats": {
             "raw_calls": len(all_calls),
             "kept": len(out_rows),
             "skipped_no_owner": skipped_no_owner,
             "skipped_weekend": skipped_weekend,
-            "raw_meetings": len(all_meetings_raw),
-            "kept_meetings": len(out_meetings),
+            "raw_deals": len(all_deals_raw),
+            "kept_deals": len(out_deals),
         },
     }
     out_path = os.path.abspath(
@@ -376,7 +365,7 @@ def main():
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with open(out_path, "w") as f:
         json.dump(payload, f)
-    print(f"\nWrote {out_path} with {len(out_rows)} call rows + {len(out_meetings)} meetings")
+    print(f"\nWrote {out_path} with {len(out_rows)} call rows + {len(out_deals)} deals")
     print(f"Stats: {payload['stats']}")
 
 
