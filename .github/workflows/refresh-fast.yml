@@ -1,22 +1,21 @@
 name: "Fast refresh (weekdays 8am–6pm UK)"
 
-# Runs automatically Mon-Fri. Also supports manual trigger.
-# The job loops every 15 minutes for 10 hours (8am → 6pm).
-# To stop it early: Actions → click the running workflow → Cancel workflow.
+# Runs automatically Mon-Fri at 7am UTC (~8am UK).
+# Loops every 15 minutes for 10 hours, then stops.
+# Manual trigger: Actions tab → Run workflow.
+# Stop early: Actions → click running workflow → Cancel workflow.
 
 on:
   schedule:
-    # 07:00 UTC = 08:00 BST (summer) / 07:00 GMT (winter).
-    # During GMT months this starts at 7am UK — close enough.
     - cron: "0 7 * * 1-5"    # Mon-Fri at 07:00 UTC
-  workflow_dispatch: {}        # allow manual trigger too
+  workflow_dispatch: {}
 
 permissions:
   contents: write
 
 concurrency:
   group: refresh-fast
-  cancel-in-progress: true     # re-triggering restarts the window
+  cancel-in-progress: true
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -24,7 +23,7 @@ env:
 jobs:
   refresh-loop:
     runs-on: ubuntu-latest
-    timeout-minutes: 650       # ~10h50m safety net
+    timeout-minutes: 650
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,43 +33,60 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Refresh loop (every 15 min for 10 hours)
+      - name: Refresh loop
+        shell: bash --noprofile --norc {0}
         env:
           HUBSPOT_TOKEN: ${{ secrets.HUBSPOT_TOKEN }}
           LOOKBACK_DAYS: "420"
           TIMEZONE: "Europe/London"
-          REP_NAMES: "Tyreek Burke,Jennifer Fasida,Liam Bolger-Prentice,Zoe Cornelius,Miles Smith,George Watson,Henry McCloskey,Hamid Abusibah,Nathan Brown,Darien Bryan"
+          REP_NAMES: "Tyreek Burke,Jennifer Fasida,Liam Bolger-Prentice,Zoe Cornelius,Miles Smith,George Watson,Henry McCloskey,Darien Bryan"
         run: |
-          set +e
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          ITERATIONS=40   # 40 × 15 min = 10 hours (8am → 6pm)
-          for i in $(seq 1 $ITERATIONS); do
-            echo "──── Refresh $i/$ITERATIONS  $(date -u +%Y-%m-%dT%H:%M:%SZ) ────"
+          ITERATIONS=40
 
-            # Fetch fresh data from HubSpot
-            python scripts/fetch_hubspot.py
-            if [ $? -ne 0 ]; then
-              echo "Fetch failed, will retry next cycle"
+          i=1
+          while [ "$i" -le "$ITERATIONS" ]; do
+            echo ""
+            echo "========================================"
+            echo "  Refresh $i/$ITERATIONS  $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "========================================"
+
+            echo "[1/4] Fetching HubSpot data…"
+            if python scripts/fetch_hubspot.py; then
+              echo "[2/4] Fetch succeeded."
+            else
+              echo "[2/4] Fetch FAILED (exit $?). Will retry next cycle."
+              echo "[SLEEP] Sleeping 15 minutes…"
+              i=$((i + 1))
               sleep 900
               continue
             fi
 
-            # Commit first, then pull remote changes, then push
+            echo "[3/4] Committing…"
             git add data/data.json
-            if git diff --staged --quiet; then
-              echo "No changes to commit."
-            else
-              git commit -m "chore: fast refresh HubSpot data ($(date -u +%Y-%m-%dT%H:%M))"
-              git pull origin main --no-rebase -X ours || true
+
+            CHANGED=0
+            git diff --staged --quiet || CHANGED=1
+
+            if [ "$CHANGED" -eq 1 ]; then
+              git commit -m "chore: fast refresh HubSpot data ($(date -u +%Y-%m-%dT%H:%M))" || echo "Commit failed"
+              echo "[3/4] Pulling remote…"
+              git pull origin main --no-rebase -X ours || echo "Pull failed, continuing anyway"
+              echo "[4/4] Pushing…"
               git push || echo "Push failed, will retry next cycle"
+            else
+              echo "[3/4] No changes to commit."
             fi
 
-            # Sleep 15 min (unless this is the last iteration)
             if [ "$i" -lt "$ITERATIONS" ]; then
-              echo "Sleeping 15 minutes…"
+              echo "[SLEEP] Sleeping 15 minutes… (next: $((i+1))/$ITERATIONS)"
               sleep 900
             fi
+
+            i=$((i + 1))
           done
-          echo "Done — 10-hour fast refresh window complete."
+
+          echo ""
+          echo "Done — $ITERATIONS iterations complete."
