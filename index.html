@@ -132,12 +132,17 @@
   body.tv-mode .qtr-strip-name{font-size:16px}
   body.tv-mode .qtr-strip-pts{font-size:28px}
   body.tv-mode .qtr-strip-label{font-size:11px}
-  .qtr-strip-person{display:flex;align-items:center;gap:8px;padding:5px 10px;font-size:13px;color:var(--fg)}
-  .qtr-strip-medal{font-size:16px}
-  .qtr-strip-pname{font-weight:600}
-  .qtr-strip-ppts{color:var(--accent);font-weight:700;margin-left:auto}
-  body.tv-mode .qtr-strip-person{padding:6px 14px;font-size:16px}
-  body.tv-mode .qtr-strip-medal{font-size:20px}
+  .qtr-strip-person{display:flex;align-items:center;gap:8px;padding:4px 10px;font-size:13px;color:var(--fg)}
+  .qtr-strip-medal{font-size:14px;min-width:20px}
+  .qtr-strip-pname{font-weight:600;min-width:80px}
+  .qtr-strip-ppts{color:var(--accent);font-weight:700;margin-left:auto;white-space:nowrap}
+  .qtr-strip-bar{flex:1;height:6px;background:var(--border);border-radius:3px;margin:0 8px;min-width:40px}
+  .qtr-strip-bar-fill{height:100%;border-radius:3px;background:var(--accent);transition:width .4s}
+  .qtr-strip-header{display:flex;justify-content:space-between;align-items:center;padding:6px 10px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--border);margin-bottom:2px}
+  .qtr-strip-header .target{color:var(--accent);font-weight:600}
+  body.tv-mode .qtr-strip-person{padding:5px 14px;font-size:15px}
+  body.tv-mode .qtr-strip-medal{font-size:18px}
+  body.tv-mode .qtr-strip-header{font-size:13px;padding:6px 14px}
 
   /* Normal mode: stack vertically (team battle on top, leaderboard below) */
   .tv-layout{display:flex;flex-direction:column-reverse;gap:20px}
@@ -1252,50 +1257,46 @@ function buildQuarter(){
   window._qtrTeamScores = teamScores;
   window._qtrLabel = titleForKey(qtrRange);
 
-  // Populate the quarter summary strip on the Pipeline Gen Day tab
+  // Populate the BDR monthly calls strip on the Pipeline Gen Day tab
   const stripEl = document.getElementById("pgdQtrSummary");
   if(stripEl){
-    // Always use full quarter data for the strip (regardless of qtrRange)
-    const qBoard = scoreForRange(getQuarterStart(), iso(new Date()));
-    const qTeamScores = {};
-    PGD_TEAMS.forEach(t=>{
-      const memberNames = new Set(t.members.map(m=>m.rep));
-      let totalPts=0;
-      qBoard.forEach(b=>{ if(memberNames.has(b.name)) totalPts += b.pts; });
-      qTeamScores[t.name] = {pts:totalPts};
-    });
-    const q = Math.floor(new Date().getMonth()/3)+1;
-    const qLabel = "Q"+q+" "+new Date().getFullYear();
+    const BDR_MONTHLY_TARGET = 904;
+    const AE_NAMES = new Set(["Henry McCloskey","George Watson","Darien Bryan"]);
+    const monthStart = getMonthStart(new Date());
+    const todayStr = iso(new Date());
+    const monthLabel = new Date().toLocaleDateString(undefined,{month:"long"});
 
-    let stripHtml = `<div class="qtr-strip">`;
-    PGD_TEAMS.forEach(t=>{
-      const sc = qTeamScores[t.name];
-      stripHtml += `
-        <div class="qtr-strip-card ${t.cssClass}">
-          <div>
-            <div class="qtr-strip-name">${t.name}</div>
-            <div class="qtr-strip-label">${qLabel} total</div>
-          </div>
-          <div class="qtr-strip-pts">${sc.pts}</div>
-        </div>`;
+    // Count calls this month per BDR
+    const bdrCalls = {};
+    (RAW.rows || []).forEach(row=>{
+      if(AE_NAMES.has(row.rep)) return;
+      if(row.date < monthStart || row.date > todayStr) return;
+      bdrCalls[row.rep] = (bdrCalls[row.rep]||0) + 1;
     });
-    stripHtml += `</div>`;
+
+    // Sort BDRs by call count descending
+    const bdrList = REPS.filter(r=>!AE_NAMES.has(r.name))
+      .map(r=>({name:r.name, calls:bdrCalls[r.name]||0}))
+      .sort((a,b)=>b.calls - a.calls);
+
+    const medals = ["&#x1F947;","&#x1F948;","&#x1F949;","4th","5th"];
     const repTeamLookup = {};
     PGD_TEAMS.forEach(t=>t.members.forEach(m=>{ repTeamLookup[m.rep] = t.name }));
-    const top2 = qBoard.slice(0,2);
-    if(top2.length){
-      const medals = ["&#x1F947;","&#x1F948;"];
-      top2.forEach((b,i)=>{
-        const tm = repTeamLookup[b.name] || "";
-        const tmClass = tm ? tm.toLowerCase() : "";
-        stripHtml += `<div class="qtr-strip-person">
-          <span class="qtr-strip-medal">${medals[i]}</span>
-          <span class="qtr-strip-pname">${b.name}</span>
-          <span class="qtr-strip-ppts">${b.pts} pts</span>
-          ${tm ? `<span class="lb-team-badge ${tmClass}">${tm}</span>` : ""}
-        </div>`;
-      });
-    }
+    let stripHtml = `<div class="qtr-strip-header">
+      <span>${monthLabel} BDR Calls</span>
+      <span>Target: <span class="target">${BDR_MONTHLY_TARGET.toLocaleString()}</span></span>
+    </div>`;
+    bdrList.forEach((b,i)=>{
+      const pct = Math.min(100, Math.round((b.calls / BDR_MONTHLY_TARGET) * 100));
+      const tm = repTeamLookup[b.name] || "";
+      const tmClass = tm ? tm.toLowerCase() : "";
+      stripHtml += `<div class="qtr-strip-person">
+        <span class="qtr-strip-medal">${medals[i] || (i+1)+"th"}</span>
+        <span class="qtr-strip-pname">${b.name.split(" ")[0]}</span>
+        <div class="qtr-strip-bar"><div class="qtr-strip-bar-fill" style="width:${pct}%;background:${pct>=100?'#34d399':'var(--accent)'}"></div></div>
+        <span class="qtr-strip-ppts">${b.calls} <span style="color:var(--muted);font-weight:400;font-size:11px">/ ${BDR_MONTHLY_TARGET}</span></span>
+      </div>`;
+    });
     stripEl.innerHTML = stripHtml;
   }
 }
