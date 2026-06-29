@@ -411,7 +411,7 @@ const REPS = [
   // AEs
   { name: "George Watson",        color: "#fb923c", team: "AE" },
   { name: "Henry McCloskey",      color: "#38bdf8", team: "AE" },
-  { name: "Zoe Cornelius",        color: "#fbbf24", team: "AE" },
+  { name: "Zoe Cornelius",        color: "#fbbf24", team: "BDR" },
   { name: "Darien Bryan",         color: "#f87171", team: "AE" },
 ];
 
@@ -1257,44 +1257,35 @@ function buildQuarter(){
   window._qtrTeamScores = teamScores;
   window._qtrLabel = titleForKey(qtrRange);
 
-  // Populate the BDR monthly calls strip on the Pipeline Gen Day tab
+  // Populate the BDR monthly points strip on the Pipeline Gen Day tab
   const stripEl = document.getElementById("pgdQtrSummary");
   if(stripEl){
-    const BDR_MONTHLY_TARGET = 904;
     const AE_NAMES = new Set(["Henry McCloskey","George Watson","Darien Bryan"]);
     const monthStart = getMonthStart(new Date());
     const todayStr = iso(new Date());
-    const monthLabel = new Date().toLocaleDateString(undefined,{month:"long"});
+    const monthLabel = new Date().toLocaleDateString(undefined,{month:"long",year:"numeric"});
 
-    // Count calls this month per BDR
-    const bdrCalls = {};
-    (RAW.rows || []).forEach(row=>{
-      if(AE_NAMES.has(row.rep)) return;
-      if(row.date < monthStart || row.date > todayStr) return;
-      bdrCalls[row.rep] = (bdrCalls[row.rep]||0) + 1;
-    });
+    // Use the shared scoring engine for the month, then filter to BDRs
+    const qBoard = scoreForRange(monthStart, todayStr);
+    const bdrList = qBoard.filter(b=>!AE_NAMES.has(b.name))
+      .sort((a,b)=>b.pts - a.pts);
 
-    // Sort BDRs by call count descending
-    const bdrList = REPS.filter(r=>!AE_NAMES.has(r.name))
-      .map(r=>({name:r.name, calls:bdrCalls[r.name]||0}))
-      .sort((a,b)=>b.calls - a.calls);
-
+    const topPts = bdrList.length ? bdrList[0].pts : 1;
     const medals = ["&#x1F947;","&#x1F948;","&#x1F949;","4th","5th"];
     const repTeamLookup = {};
     PGD_TEAMS.forEach(t=>t.members.forEach(m=>{ repTeamLookup[m.rep] = t.name }));
     let stripHtml = `<div class="qtr-strip-header">
-      <span>${monthLabel} BDR Calls</span>
-      <span>Target: <span class="target">${BDR_MONTHLY_TARGET.toLocaleString()}</span></span>
+      <span>${monthLabel} BDR Points</span>
     </div>`;
     bdrList.forEach((b,i)=>{
-      const pct = Math.min(100, Math.round((b.calls / BDR_MONTHLY_TARGET) * 100));
+      const pct = topPts > 0 ? Math.min(100, Math.round((b.pts / topPts) * 100)) : 0;
       const tm = repTeamLookup[b.name] || "";
       const tmClass = tm ? tm.toLowerCase() : "";
       stripHtml += `<div class="qtr-strip-person">
         <span class="qtr-strip-medal">${medals[i] || (i+1)+"th"}</span>
         <span class="qtr-strip-pname">${b.name.split(" ")[0]}</span>
-        <div class="qtr-strip-bar"><div class="qtr-strip-bar-fill" style="width:${pct}%;background:${pct>=100?'#34d399':'var(--accent)'}"></div></div>
-        <span class="qtr-strip-ppts">${b.calls} <span style="color:var(--muted);font-weight:400;font-size:11px">/ ${BDR_MONTHLY_TARGET}</span></span>
+        <div class="qtr-strip-bar"><div class="qtr-strip-bar-fill" style="width:${pct}%;background:var(--accent)"></div></div>
+        <span class="qtr-strip-ppts">${b.pts} pts</span>
       </div>`;
     });
     stripEl.innerHTML = stripHtml;
