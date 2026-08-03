@@ -2,8 +2,9 @@
 
 A static, single-page dashboard that shows daily and weekly call activity by rep, pulled nightly from HubSpot and served via GitHub Pages.
 
-- **index.html** — the dashboard (loads `data/data.json`)
+- **index.html** — the dashboard (loads `data/data.json`) and the **Bingo** tab (loads `data/bingo.json`)
 - **scripts/fetch_hubspot.py** — pulls Call engagements + owners from HubSpot, writes `data/data.json`
+- **scripts/fetch_bingo.py** — pulls the extra data the Bingo tab needs, writes `data/bingo.json` (see [BDR Bingo](#bdr-bingo))
 - **.github/workflows/refresh.yml** — runs the fetch daily at 00:00 UTC and commits the refreshed JSON
 
 ---
@@ -131,6 +132,30 @@ The dashboard loads that JSON, groups into daily and weekly series, and renders 
 - **Numbers look low.** Confirm the scope is `crm.objects.calls.read` and not something narrower. Also confirm your HubSpot account actually stores the activity as Call engagements (not Meetings/Tasks).
 - **A rep's name has changed in HubSpot.** Update the `REPS` array in `index.html` to match the new name.
 - **Dashboard shows stale data.** Pages may cache; hard-refresh (Cmd/Ctrl-Shift-R). The fetch URL already adds `?t=<timestamp>` to bust the JSON cache.
+
+---
+
+## BDR Bingo
+
+The **Bingo** tab is a weekly SPIFF card for the BDR team — one 5×5 card per BDR, resetting Mon–Sun. Squares are auto-marked from HubSpot activity; the handful that can't be measured are ticked by hand.
+
+- **index.html** renders the tab and holds the 25 square rules (search `BINGO_SQUARES`).
+- **scripts/fetch_bingo.py** pulls the extra data and writes **`data/bingo.json`** — calls with time-of-day, meetings, deals with amount/stage/type, and ICP-fit contacts. It runs in both refresh workflows right after `fetch_hubspot.py`, and a failure is non-fatal (the last good `bingo.json` is kept).
+
+### What feeds each square
+
+- **Auto** (from `bingo.json`): activity counts and timings — e.g. Tier 1 / Lighthouse meeting (company `atlas_priority = Lighthouse`), net-new logo (deal type *New Logo Pro*), 2× Atlas (deal type *Atlas Only*), first £25k SQL pipe (deal ≥ £25k at *Sales Qualified Lead* or beyond), before-9am / before-lunch call bursts.
+- **Manual** — 5 dashed "tap to tick" squares (referral, spoke to an MD, "not now" + future date, meeting from LinkedIn, helped another SDR). Stored per-browser in `localStorage`, so tick them on the office / TV machine. The free space is always marked.
+
+### Config (env, set in the workflows)
+
+| Env | Default | Meaning |
+|---|---|---|
+| `BINGO_REP_NAMES` | the 5 BDRs | who gets a card |
+| `DAILY_CALL_TARGET` | `40` | the "105% of daily call target" square — **set this to the real target** |
+| `BINGO_WEEKS` | `10` | rolling window of weeks to include |
+
+`fetch_bingo.py` reads company fields (`atlas_priority`, `sc_icp_fit`) via associations, so the HubSpot private app also needs **`crm.objects.companies.read`** in addition to the scopes above.
 
 ---
 

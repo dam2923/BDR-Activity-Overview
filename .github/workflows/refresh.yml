@@ -42,11 +42,21 @@ jobs:
           REP_NAMES: "Tyreek Burke,Jennifer Fasida,Liam Bolger-Prentice,Zoe Cornelius,Miles Smith,George Watson,Henry McCloskey,Darien Bryan"
         run: python scripts/fetch_hubspot.py
 
+      - name: Fetch Bingo data
+        env:
+          HUBSPOT_TOKEN: ${{ secrets.HUBSPOT_TOKEN }}
+          TIMEZONE: "Europe/London"
+          # BDRs who get a bingo card (subset of REP_NAMES above).
+          BINGO_REP_NAMES: "Tyreek Burke,Jennifer Fasida,Liam Bolger-Prentice,Miles Smith,Zoe Cornelius"
+          DAILY_CALL_TARGET: "40"     # drives the "105% of daily call target" square
+          BINGO_WEEKS: "10"           # rolling window of weeks to include
+        run: python scripts/fetch_bingo.py
+
       - name: Commit refreshed data
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/data.json
+          git add data/data.json data/bingo.json
           if git diff --staged --quiet; then
             echo "No changes to commit."
           else
