@@ -235,34 +235,34 @@
   body.tv-mode .tv-exit{display:block}
 
   /* ── Bingo ── */
+  .bingo-legend{display:flex;gap:5px;align-items:center;flex-wrap:wrap}
   .bingo-layout{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start}
-  .bingo-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;flex:1;min-width:320px;max-width:860px}
-  .bingo-cell{position:relative;aspect-ratio:1/1;background:var(--panel2);border:1px solid var(--border);border-radius:10px;padding:8px 7px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:11px;line-height:1.3;color:var(--muted);overflow:hidden;transition:all .15s}
-  .bingo-cell .bingo-label{position:relative;z-index:2}
-  .bingo-cell .bingo-tier{position:absolute;top:5px;left:7px;font-size:9px;font-weight:800;letter-spacing:.08em;color:var(--border);z-index:2}
-  .bingo-cell.done{background:#12261c;border-color:#2f7d54;color:#d6f5e2;box-shadow:0 0 0 1px #2f7d54 inset}
-  .bingo-cell.done .bingo-tier{color:#2f7d54}
-  .bingo-cell.done::after{content:"\2713";position:absolute;top:4px;right:7px;color:#4ade80;font-size:13px;font-weight:800;z-index:2}
+  .bingo-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;flex:1;min-width:320px;max-width:900px}
+  .bingo-cell{position:relative;min-height:120px;background:var(--panel2);border:1px solid var(--border);border-radius:10px;padding:7px 7px 6px;display:flex;flex-direction:column;text-align:center;font-size:11px;line-height:1.25;color:var(--muted);transition:all .15s}
+  .bingo-cell .bingo-tier{position:absolute;top:5px;left:7px;font-size:9px;font-weight:800;letter-spacing:.08em;color:var(--border)}
+  .bingo-cell .bingo-label{flex:1;display:flex;align-items:center;justify-content:center;padding:12px 2px 5px}
+  .bingo-cell.has{background:#12261c;border-color:#2f7d54;color:#d6f5e2}
+  .bingo-cell.has .bingo-tier{color:#2f7d54}
   .bingo-cell.free{background:#1a2540;border-color:var(--accent);color:#cfe0ff}
-  .bingo-cell.free.done{background:#16233f;box-shadow:none}
-  .bingo-cell.manual{cursor:pointer;border-style:dashed}
-  .bingo-cell.manual:hover{border-color:var(--accent)}
-  .bingo-cell.manual::before{content:"tap to tick";position:absolute;bottom:5px;left:0;right:0;font-size:9px;color:var(--muted);opacity:.65;z-index:2}
-  .bingo-cell.manual.done::before{content:""}
-  .bingo-cell.in-line{outline:2px solid var(--gold);outline-offset:-2px}
+  .bingo-cell.manual{border-style:dashed}
+  .bingo-avs{display:flex;flex-wrap:wrap;gap:3px;justify-content:center;min-height:22px}
+  .bingo-av{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--av);color:#0b1220;font-size:10px;font-weight:800;border:1px solid rgba(255,255,255,.25);flex:0 0 auto}
+  button.bingo-av{cursor:pointer;font-family:inherit;padding:0}
+  button.bingo-av.off{background:transparent;color:var(--av);border:1px dashed var(--av);opacity:.45}
+  button.bingo-av.off:hover{opacity:1}
   body.tv-mode .bingo-grid{max-width:none}
-  body.tv-mode .bingo-cell{font-size:15px}
+  body.tv-mode .bingo-cell{font-size:14px;min-height:150px}
+  body.tv-mode .bingo-av{width:28px;height:28px;font-size:12px}
 
-  .bingo-side{display:flex;flex-direction:column;gap:12px;min-width:230px;flex:0 0 auto}
-  .bingo-count{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px 18px}
-  .bingo-count .v{font-size:34px;font-weight:800;color:var(--accent)}
-  .bingo-count .l{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-top:2px}
-  .bingo-ladder{display:flex;flex-direction:column;gap:6px}
-  .bingo-prize{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:9px;background:var(--panel2);border:1px solid var(--border);font-size:13px;color:var(--muted)}
-  .bingo-prize.hit{border-color:#2f7d54;background:#12261c;color:#d6f5e2}
-  .bingo-prize .bingo-prize-name{font-weight:600}
-  .bingo-prize .bingo-prize-reward{font-size:11px;opacity:.8;margin-left:auto;text-align:right}
-  #bingoRepSel .btn.on{border-color:var(--accent);background:#1e3a66;color:var(--text)}
+  .bingo-side{display:flex;flex-direction:column;gap:8px;min-width:260px;flex:0 0 auto}
+  .bingo-sum-title{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+  .bingo-summary{display:flex;flex-direction:column;gap:6px}
+  .bingo-sum-row{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;background:var(--panel2);border:1px solid var(--border);font-size:13px}
+  .bingo-sum-medal{width:16px;text-align:center}
+  .bingo-sum-name{font-weight:600;color:var(--text)}
+  .bingo-sum-prize{margin-left:auto;font-size:11px;color:var(--muted);white-space:nowrap}
+  .bingo-sum-count{font-weight:700;color:var(--text);min-width:46px;text-align:right}
+  .bingo-sum-count .muted{color:var(--muted);font-weight:400;font-size:11px}
 </style>
 </head>
 <body>
@@ -1401,7 +1401,15 @@ const BINGO_SQL_STAGES = new Set([
   "Discovery", "Demonstration", "Proposal", "Contract",
 ]);
 
-let BINGO = null, bingoRep = null, bingoWeek = null;
+let BINGO = null, bingoWeek = null;
+
+function repMeta(name){
+  const r = REPS.find(x => x.name === name);
+  const parts = name.trim().split(/\s+/);
+  const initials = ((parts[0] || "")[0] || "") + (parts.length > 1 ? (parts[parts.length - 1][0] || "") : "");
+  return { initials: initials.toUpperCase(), color: r ? r.color : "#94a3b8", first: parts[0] };
+}
+function avatarSpan(name){ const m = repMeta(name); return `<span class="bingo-av" style="--av:${m.color}" title="${name}">${m.initials}</span>`; }
 
 const hmin = t => { if(!t) return 1e9; const p = String(t).split(":"); return (+p[0]) * 60 + (+(p[1] || 0)); };
 const dnum = s => new Date(s + "T00:00:00");
@@ -1518,76 +1526,86 @@ function bingoState(w){
   });
 }
 
-function renderBingoLadder(state){
+function bingoTiers(state){
   const marked = state.filter(Boolean).length;
   let rowsCols = 0, diags = 0;
   BINGO_LINES.forEach((line, li) => { if(line.every(i => state[i])){ if(li < 10) rowsCols++; else diags++; } });
-  const lines = rowsCols + diags;
-  const full = state.every(Boolean);
-  const tiers = [
-    {name:"Two squares",   reward:"£10 coffee / lunch",  hit: marked >= 2, badge:"➕"},
-    {name:"Three squares", reward:"Team breakfast",      hit: marked >= 3, badge:"🍳"},
-    {name:"Four squares",  reward:"Team drinks Thursday", hit: marked >= 4, badge:"🍻"},
-    {name:"Diagonal",      reward:"Bottle of champagne", hit: diags >= 1,  badge:"🍾"},
-    {name:"One line",      reward:"Clay pigeon shoot",   hit: rowsCols >= 1, badge:"🎯"},
-    {name:"Two lines",     reward:"Team karaoke",        hit: lines >= 2,  badge:"🎤"},
-    {name:"Full house",    reward:"Dinner for two / £100",hit: full,       badge:"🏆"},
+  const lines = rowsCols + diags, full = state.every(Boolean);
+  return [
+    {name:"Two squares",   reward:"£10 coffee / lunch",   badge:"➕", hit: marked >= 2},
+    {name:"Three squares", reward:"Team breakfast",       badge:"🍳", hit: marked >= 3},
+    {name:"Four squares",  reward:"Team drinks Thursday",  badge:"🍻", hit: marked >= 4},
+    {name:"Diagonal",      reward:"Bottle of champagne",  badge:"🍾", hit: diags >= 1},
+    {name:"One line",      reward:"Clay pigeon shoot",    badge:"🎯", hit: rowsCols >= 1},
+    {name:"Two lines",     reward:"Team karaoke",         badge:"🎤", hit: lines >= 2},
+    {name:"Full house",    reward:"Dinner for two / £100", badge:"🏆", hit: full},
   ];
-  return tiers.map(t => `<div class="bingo-prize ${t.hit ? 'hit' : ''}"><span>${t.badge}</span><span class="bingo-prize-name">${t.name}</span><span class="bingo-prize-reward">${t.reward}</span></div>`).join("");
 }
+function bingoTopTier(state){ const hit = bingoTiers(state).filter(t => t.hit); return hit.length ? hit[hit.length - 1] : null; }
 
 function renderBingo(){
   const body = document.getElementById("bingoBody");
   const prizesBar = document.getElementById("bingoPrizes");
   if(!BINGO){
-    body.innerHTML = `<div class="lb-empty">No bingo data yet. Once <code>data/bingo.json</code> is generated by the refresh, cards appear here.</div>`;
+    body.innerHTML = `<div class="lb-empty">No bingo data yet. Once <code>data/bingo.json</code> is generated by the refresh, the card appears here.</div>`;
     prizesBar.innerHTML = "";
     return;
   }
+  const reps = bingoRepNames();
   const per = buildBingoWeek(bingoWeek);
-  const w = per[bingoRep] || { rep: bingoRep, days: [], friday: "", win: {}, calls: [], meetings: [], deals: [], icp: [] };
-  const state = bingoState(w);
-
-  const inLine = new Array(25).fill(false);
-  BINGO_LINES.forEach(line => { if(line.every(i => state[i])) line.forEach(i => inLine[i] = true); });
+  const states = {};
+  reps.forEach(r => { states[r] = bingoState(per[r]); });
 
   const cells = BINGO_SQUARES.map((sq, i) => {
     const cls = ["bingo-cell"];
     if(sq.kind === "free") cls.push("free");
     if(sq.kind === "manual") cls.push("manual");
-    if(state[i]) cls.push("done");
-    if(inLine[i]) cls.push("in-line");
-    return `<div class="${cls.join(" ")}" data-sq="${sq.n}">`
+    let avs;
+    if(sq.kind === "manual"){
+      avs = reps.map(r => {
+        const m = repMeta(r);
+        return `<button class="bingo-av btn-av ${states[r][i] ? "" : "off"}" style="--av:${m.color}" data-rep="${r}" data-sq="${sq.n}" title="${r}">${m.initials}</button>`;
+      }).join("");
+    } else {
+      const doneReps = reps.filter(r => states[r][i]);
+      if(doneReps.length) cls.push("has");
+      avs = doneReps.map(avatarSpan).join("");
+    }
+    return `<div class="${cls.join(" ")}">`
       + `<span class="bingo-tier">${"BINGO"[i % 5]}</span>`
-      + `<span class="bingo-label">${sq.label}</span></div>`;
+      + `<span class="bingo-label">${sq.label}</span>`
+      + `<span class="bingo-avs">${avs}</span></div>`;
   }).join("");
 
-  const marked = state.filter(Boolean).length;
+  const summary = reps.map(r => ({ r, marked: states[r].filter(Boolean).length, tier: bingoTopTier(states[r]) }))
+                      .sort((a, b) => b.marked - a.marked);
+  const summaryHTML = summary.map((s, idx) => {
+    const medal = idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : "";
+    const prize = s.tier ? `<span class="bingo-sum-prize" title="${s.tier.reward}">${s.tier.badge} ${s.tier.name}</span>` : `<span class="bingo-sum-prize">—</span>`;
+    return `<div class="bingo-sum-row"><span class="bingo-sum-medal">${medal}</span>${avatarSpan(s.r)}`
+      + `<span class="bingo-sum-name">${repMeta(s.r).first}</span>${prize}`
+      + `<span class="bingo-sum-count">${s.marked}<span class="muted">/25</span></span></div>`;
+  }).join("");
+
   body.innerHTML = `<div class="bingo-layout">`
     + `<div class="bingo-grid">${cells}</div>`
-    + `<div class="bingo-side">`
-    +   `<div class="bingo-count"><div class="v">${marked}<span style="font-size:16px;color:var(--muted)">/25</span></div><div class="l">Squares hit</div></div>`
-    +   `<div class="bingo-ladder">${renderBingoLadder(state)}</div>`
-    + `</div></div>`;
+    + `<div class="bingo-side"><div class="bingo-sum-title">This week</div><div class="bingo-summary">${summaryHTML}</div></div>`
+    + `</div>`;
 
-  body.querySelectorAll(".bingo-cell.manual").forEach(cell => {
-    cell.addEventListener("click", () => { bingoManualToggle(bingoRep, bingoWeek, +cell.dataset.sq); renderBingo(); });
-  });
+  body.querySelectorAll(".btn-av").forEach(btn => btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    bingoManualToggle(btn.dataset.rep, bingoWeek, +btn.dataset.sq);
+    renderBingo();
+  }));
 
-  prizesBar.innerHTML = `<strong>Auto-marked</strong> from HubSpot activity · <strong>dashed</strong> squares are manual — tap to tick · resets weekly (Mon–Sun)`;
+  prizesBar.innerHTML = `<strong>Auto-marked</strong> from HubSpot · <strong>dashed</strong> squares: tap a rep's initials to tick who earned it · free space = everyone · resets weekly (Mon–Sun)`;
 }
 
 function initBingo(){
   const reps = bingoRepNames();
-  if(!bingoRep || !reps.includes(bingoRep)) bingoRep = reps[0];
-  const rs = document.getElementById("bingoRepSel");
-  rs.innerHTML = reps.map(n => `<button class="btn ${n === bingoRep ? 'on' : ''}" data-brep="${n}">${n.split(" ")[0]}</button>`).join("");
-  rs.querySelectorAll("[data-brep]").forEach(b => b.addEventListener("click", () => {
-    bingoRep = b.dataset.brep;
-    rs.querySelectorAll(".btn").forEach(x => x.classList.remove("on"));
-    b.classList.add("on");
-    renderBingo();
-  }));
+  const legend = document.getElementById("bingoRepSel");
+  legend.className = "bingo-legend";
+  legend.innerHTML = reps.map(avatarSpan).join("");
   const weeks = bingoWeeksList();
   if(!bingoWeek || !weeks.includes(bingoWeek)) bingoWeek = weeks[0];
   const ws = document.getElementById("bingoWeekSel");
