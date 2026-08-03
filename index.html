@@ -233,6 +233,36 @@
   .tv-exit{display:none;position:fixed;bottom:0;left:0;right:0;background:rgba(11,18,32,.9);border-top:1px solid var(--border);padding:6px;text-align:center;z-index:999}
   .tv-exit span{color:var(--muted);font-size:12px}
   body.tv-mode .tv-exit{display:block}
+
+  /* ── Bingo ── */
+  .bingo-layout{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start}
+  .bingo-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;flex:1;min-width:320px;max-width:860px}
+  .bingo-cell{position:relative;aspect-ratio:1/1;background:var(--panel2);border:1px solid var(--border);border-radius:10px;padding:8px 7px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:11px;line-height:1.3;color:var(--muted);overflow:hidden;transition:all .15s}
+  .bingo-cell .bingo-label{position:relative;z-index:2}
+  .bingo-cell .bingo-tier{position:absolute;top:5px;left:7px;font-size:9px;font-weight:800;letter-spacing:.08em;color:var(--border);z-index:2}
+  .bingo-cell.done{background:#12261c;border-color:#2f7d54;color:#d6f5e2;box-shadow:0 0 0 1px #2f7d54 inset}
+  .bingo-cell.done .bingo-tier{color:#2f7d54}
+  .bingo-cell.done::after{content:"\2713";position:absolute;top:4px;right:7px;color:#4ade80;font-size:13px;font-weight:800;z-index:2}
+  .bingo-cell.free{background:#1a2540;border-color:var(--accent);color:#cfe0ff}
+  .bingo-cell.free.done{background:#16233f;box-shadow:none}
+  .bingo-cell.manual{cursor:pointer;border-style:dashed}
+  .bingo-cell.manual:hover{border-color:var(--accent)}
+  .bingo-cell.manual::before{content:"tap to tick";position:absolute;bottom:5px;left:0;right:0;font-size:9px;color:var(--muted);opacity:.65;z-index:2}
+  .bingo-cell.manual.done::before{content:""}
+  .bingo-cell.in-line{outline:2px solid var(--gold);outline-offset:-2px}
+  body.tv-mode .bingo-grid{max-width:none}
+  body.tv-mode .bingo-cell{font-size:15px}
+
+  .bingo-side{display:flex;flex-direction:column;gap:12px;min-width:230px;flex:0 0 auto}
+  .bingo-count{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px 18px}
+  .bingo-count .v{font-size:34px;font-weight:800;color:var(--accent)}
+  .bingo-count .l{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-top:2px}
+  .bingo-ladder{display:flex;flex-direction:column;gap:6px}
+  .bingo-prize{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:9px;background:var(--panel2);border:1px solid var(--border);font-size:13px;color:var(--muted)}
+  .bingo-prize.hit{border-color:#2f7d54;background:#12261c;color:#d6f5e2}
+  .bingo-prize .bingo-prize-name{font-weight:600}
+  .bingo-prize .bingo-prize-reward{font-size:11px;opacity:.8;margin-left:auto;text-align:right}
+  #bingoRepSel .btn.on{border-color:var(--accent);background:#1e3a66;color:var(--text)}
 </style>
 </head>
 <body>
@@ -266,6 +296,7 @@
     <button class="tab active" data-tab="calls">Call Activity</button>
     <button class="tab" data-tab="pipeline">Today's Rankings</button>
     <button class="tab" data-tab="quarter">Quarter</button>
+    <button class="tab" data-tab="bingo">Bingo</button>
   </div>
 
   <!-- ========== TAB 1: CALL ACTIVITY ========== -->
@@ -394,6 +425,23 @@
         <div class="team-battle" id="qtrTeamBattle"></div>
       </div>
     </div>
+  </div>
+
+  <!-- ========== TAB 4: BINGO ========== -->
+  <div class="tab-panel" id="tab-bingo">
+    <div class="pgd-header">
+      <div>
+        <div class="pgd-title">BDR Bingo</div>
+        <div class="pgd-subtitle" id="bingoSubtitle">Weekly SPIFF card &mdash; ring the bell on every square</div>
+      </div>
+      <div class="pgd-timeframe" id="bingoRepSel"></div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span class="label">Week</span>
+        <select class="ctrl" id="bingoWeekSel"></select>
+      </div>
+    </div>
+    <div id="bingoBody"><div class="lb-empty">Loading bingo&hellip;</div></div>
+    <div class="pgd-rules pgd-rules-bottom" id="bingoPrizes"></div>
   </div>
 </div>
 
@@ -1340,6 +1388,221 @@ document.getElementById("downloadQtrXlsx").addEventListener("click", ()=>{
 
   XLSX.writeFile(wb, qLabel.replace(" ","_") + "_Leaderboard_" + todayStr + ".xlsx");
 });
+
+// ================= BDR BINGO =================
+const BINGO_CFG = {
+  target: 40,           // daily call target for the 105% square — overridden by bingo.json.daily_call_target
+  before9: 9 * 60,      // minutes from midnight
+  lunch: 13 * 60,
+  after: 17 * 60 + 30,  // 17:30
+};
+const BINGO_SQL_STAGES = new Set([
+  "Sales Qualified Lead", "Sales Qualified Opportunity",
+  "Discovery", "Demonstration", "Proposal", "Contract",
+]);
+
+let BINGO = null, bingoRep = null, bingoWeek = null;
+
+const hmin = t => { if(!t) return 1e9; const p = String(t).split(":"); return (+p[0]) * 60 + (+(p[1] || 0)); };
+const dnum = s => new Date(s + "T00:00:00");
+
+// --- list helpers ---
+function daysWith(list, pred, thresh){ const o = {}; list.filter(pred).forEach(x => { o[x.date] = (o[x.date] || 0) + 1; }); return Object.values(o).filter(n => n >= thresh).length; }
+function anyDay(list, thresh, keyFn){ const o = {}; list.forEach(x => { const k = keyFn ? keyFn(x) : x.date; o[k] = (o[k] || 0) + 1; }); return Object.values(o).some(n => n >= thresh); }
+function anyDayFilter(list, pred, thresh){ const o = {}; list.filter(pred).forEach(x => { o[x.date] = (o[x.date] || 0) + 1; }); return Object.values(o).some(n => n >= thresh); }
+function countOn(list, date){ return list.filter(x => x.date === date).length; }
+function maxConsecMtg(meetings){
+  const days = [...new Set(meetings.map(m => m.booked_date))].sort();
+  let best = 0, run = 0, prev = null;
+  days.forEach(ds => { run = (prev && (dnum(ds) - dnum(prev)) === 86400000) ? run + 1 : 1; prev = ds; if(run > best) best = run; });
+  return best;
+}
+
+// 25 squares in card (row-major) order. kind: auto | free | manual.
+const BINGO_SQUARES = [
+  {n:1,  label:"Make 5 calls before 9am on 2 days/week",   kind:"auto",  test:w => daysWith(w.calls, c => hmin(c.time) < BINGO_CFG.before9, 5) >= 2},
+  {n:2,  label:"Book a meeting with a Tier 1 target",      kind:"auto",  test:w => w.meetings.some(m => m.lighthouse)},
+  {n:3,  label:"First to make a call on a Monday",         kind:"auto",  test:w => w.win.mondayCall === w.rep},
+  {n:4,  label:"Call lasts more than 10 minutes",          kind:"auto",  test:w => w.calls.some(c => (c.dur || 0) > 600)},
+  {n:5,  label:"Hit 105% of daily call target",            kind:"auto",  test:w => anyDay(w.calls, Math.ceil(BINGO_CFG.target * 1.05))},
+  {n:6,  label:"Book 3 meetings in one day",               kind:"auto",  test:w => anyDay(w.meetings, 3, m => m.booked_date)},
+  {n:7,  label:"Complete 60 calls on a Friday",            kind:"auto",  test:w => countOn(w.calls, w.friday) >= 60},
+  {n:8,  label:"Get a referral from a prospect",           kind:"manual"},
+  {n:9,  label:"Speak to a Managing Director",             kind:"manual"},
+  {n:10, label:"Book the first meeting of the week",       kind:"auto",  test:w => w.win.firstMeeting === w.rep},
+  {n:11, label:"Book a meeting with a net-new logo",       kind:"auto",  test:w => w.meetings.some(m => m.net_new)},
+  {n:12, label:"Add 10 ICP prospects to CRM in a week",    kind:"auto",  test:w => w.icp.length >= 10},
+  {n:13, label:"FREE SPACE — Be a Great Teammate",         kind:"free"},
+  {n:14, label:"Book 3 meetings before Weds",              kind:"auto",  test:w => w.meetings.filter(m => m.booked_date === w.days[0] || m.booked_date === w.days[1]).length >= 3},
+  {n:15, label:"Book a meeting after 5.30pm or before 9am",kind:"auto",  test:w => w.meetings.some(m => hmin(m.time) < BINGO_CFG.before9 || hmin(m.time) > BINGO_CFG.after)},
+  {n:16, label:"Book 2 x Lighthouse Customer Meetings",    kind:"auto",  test:w => w.meetings.filter(m => m.lighthouse).length >= 2},
+  {n:17, label:"Generate 2 x Atlas opportunities",         kind:"auto",  test:w => w.deals.filter(d => (d.type || "").indexOf("Atlas") === 0).length >= 2},
+  {n:18, label:'Get a "not now" with a future date agreed',kind:"manual"},
+  {n:19, label:"Book a meeting from LinkedIn",             kind:"manual"},
+  {n:20, label:"Help another SDR book a meeting",          kind:"manual"},
+  {n:21, label:"First to create £25k+ SQL pipe",           kind:"auto",  test:w => w.win.first25k === w.rep},
+  {n:22, label:"Book meetings on three consecutive days",  kind:"auto",  test:w => maxConsecMtg(w.meetings) >= 3},
+  {n:23, label:"Book meetings on four consecutive days",   kind:"auto",  test:w => maxConsecMtg(w.meetings) >= 4},
+  {n:24, label:"65+ calls before lunch",                   kind:"auto",  test:w => anyDayFilter(w.calls, c => hmin(c.time) < BINGO_CFG.lunch, 65)},
+  {n:25, label:"Book 1 x Lighthouse prospect",             kind:"auto",  test:w => w.meetings.some(m => m.lighthouse)},
+];
+
+const BINGO_LINES = (() => {
+  const L = [];
+  for(let r = 0; r < 5; r++) L.push([0,1,2,3,4].map(c => r * 5 + c));   // rows
+  for(let c = 0; c < 5; c++) L.push([0,1,2,3,4].map(r => r * 5 + c));   // cols
+  L.push([0,6,12,18,24]); L.push([4,8,12,16,20]);                       // diagonals
+  return L;
+})();
+
+function bingoRepNames(){
+  if(BINGO && BINGO.reps && BINGO.reps.length) return BINGO.reps;
+  return REPS.filter(r => r.team === "BDR").map(r => r.name);
+}
+
+function bingoWeeksList(){
+  const set = new Set();
+  const add = ds => { if(ds) set.add(iso(mondayOf(dnum(ds)))); };
+  if(BINGO){
+    (BINGO.calls || []).forEach(c => add(c.date));
+    (BINGO.meetings || []).forEach(m => add(m.booked_date));
+    (BINGO.deals || []).forEach(d => add(d.created_date));
+    (BINGO.icp_contacts || []).forEach(c => add(c.created_date));
+  }
+  const arr = [...set].sort().reverse();
+  if(!arr.length) arr.push(iso(mondayOf(new Date())));
+  return arr;
+}
+
+// earliest rep across events by a sort key; returns rep name or null
+function bingoWinner(list, keyFn){
+  let best = null, bestKey = null;
+  list.forEach(x => { const k = keyFn(x).join("|"); if(bestKey === null || k < bestKey){ bestKey = k; best = x.rep; } });
+  return best;
+}
+
+function buildBingoWeek(mondayIso){
+  const days = [0,1,2,3,4].map(i => iso(addDays(dnum(mondayIso), i)));  // Mon..Fri
+  const sunday = iso(addDays(dnum(mondayIso), 6));
+  const inWk = ds => ds >= mondayIso && ds <= sunday;
+  const calls = (BINGO.calls || []).filter(c => inWk(c.date));
+  const meetings = (BINGO.meetings || []).filter(m => inWk(m.booked_date));
+  const deals = (BINGO.deals || []).filter(d => inWk(d.created_date));
+  const icp = (BINGO.icp_contacts || []).filter(c => inWk(c.created_date));
+  const monday = days[0];
+  const win = {
+    mondayCall: bingoWinner(calls.filter(c => c.date === monday), c => [c.time || "99:99"]),
+    firstMeeting: bingoWinner(meetings, m => [m.booked_date, m.time || "99:99"]),
+    first25k: bingoWinner(deals.filter(d => (d.amount || 0) >= 25000 && BINGO_SQL_STAGES.has(d.stage)), d => [d.created_date, d.time || "99:99"]),
+  };
+  const per = {};
+  bingoRepNames().forEach(rep => {
+    per[rep] = { rep, days, friday: days[4], win,
+      calls: calls.filter(c => c.rep === rep),
+      meetings: meetings.filter(m => m.rep === rep),
+      deals: deals.filter(d => d.rep === rep),
+      icp: icp.filter(c => c.rep === rep) };
+  });
+  return per;
+}
+
+function bingoManualKey(rep, wk, n){ return `bingo:${rep}:${wk}:${n}`; }
+function bingoManualGet(rep, wk, n){ try { return localStorage.getItem(bingoManualKey(rep, wk, n)) === "1"; } catch(e){ return false; } }
+function bingoManualToggle(rep, wk, n){ try { const k = bingoManualKey(rep, wk, n); if(localStorage.getItem(k) === "1") localStorage.removeItem(k); else localStorage.setItem(k, "1"); } catch(e){} }
+
+function bingoState(w){
+  return BINGO_SQUARES.map(sq => {
+    if(sq.kind === "free") return true;
+    if(sq.kind === "manual") return bingoManualGet(w.rep, bingoWeek, sq.n);
+    try { return !!sq.test(w); } catch(e){ return false; }
+  });
+}
+
+function renderBingoLadder(state){
+  const marked = state.filter(Boolean).length;
+  let rowsCols = 0, diags = 0;
+  BINGO_LINES.forEach((line, li) => { if(line.every(i => state[i])){ if(li < 10) rowsCols++; else diags++; } });
+  const lines = rowsCols + diags;
+  const full = state.every(Boolean);
+  const tiers = [
+    {name:"Two squares",   reward:"£10 coffee / lunch",  hit: marked >= 2, badge:"➕"},
+    {name:"Three squares", reward:"Team breakfast",      hit: marked >= 3, badge:"🍳"},
+    {name:"Four squares",  reward:"Team drinks Thursday", hit: marked >= 4, badge:"🍻"},
+    {name:"Diagonal",      reward:"Bottle of champagne", hit: diags >= 1,  badge:"🍾"},
+    {name:"One line",      reward:"Clay pigeon shoot",   hit: rowsCols >= 1, badge:"🎯"},
+    {name:"Two lines",     reward:"Team karaoke",        hit: lines >= 2,  badge:"🎤"},
+    {name:"Full house",    reward:"Dinner for two / £100",hit: full,       badge:"🏆"},
+  ];
+  return tiers.map(t => `<div class="bingo-prize ${t.hit ? 'hit' : ''}"><span>${t.badge}</span><span class="bingo-prize-name">${t.name}</span><span class="bingo-prize-reward">${t.reward}</span></div>`).join("");
+}
+
+function renderBingo(){
+  const body = document.getElementById("bingoBody");
+  const prizesBar = document.getElementById("bingoPrizes");
+  if(!BINGO){
+    body.innerHTML = `<div class="lb-empty">No bingo data yet. Once <code>data/bingo.json</code> is generated by the refresh, cards appear here.</div>`;
+    prizesBar.innerHTML = "";
+    return;
+  }
+  const per = buildBingoWeek(bingoWeek);
+  const w = per[bingoRep] || { rep: bingoRep, days: [], friday: "", win: {}, calls: [], meetings: [], deals: [], icp: [] };
+  const state = bingoState(w);
+
+  const inLine = new Array(25).fill(false);
+  BINGO_LINES.forEach(line => { if(line.every(i => state[i])) line.forEach(i => inLine[i] = true); });
+
+  const cells = BINGO_SQUARES.map((sq, i) => {
+    const cls = ["bingo-cell"];
+    if(sq.kind === "free") cls.push("free");
+    if(sq.kind === "manual") cls.push("manual");
+    if(state[i]) cls.push("done");
+    if(inLine[i]) cls.push("in-line");
+    return `<div class="${cls.join(" ")}" data-sq="${sq.n}">`
+      + `<span class="bingo-tier">${"BINGO"[i % 5]}</span>`
+      + `<span class="bingo-label">${sq.label}</span></div>`;
+  }).join("");
+
+  const marked = state.filter(Boolean).length;
+  body.innerHTML = `<div class="bingo-layout">`
+    + `<div class="bingo-grid">${cells}</div>`
+    + `<div class="bingo-side">`
+    +   `<div class="bingo-count"><div class="v">${marked}<span style="font-size:16px;color:var(--muted)">/25</span></div><div class="l">Squares hit</div></div>`
+    +   `<div class="bingo-ladder">${renderBingoLadder(state)}</div>`
+    + `</div></div>`;
+
+  body.querySelectorAll(".bingo-cell.manual").forEach(cell => {
+    cell.addEventListener("click", () => { bingoManualToggle(bingoRep, bingoWeek, +cell.dataset.sq); renderBingo(); });
+  });
+
+  prizesBar.innerHTML = `<strong>Auto-marked</strong> from HubSpot activity · <strong>dashed</strong> squares are manual — tap to tick · resets weekly (Mon–Sun)`;
+}
+
+function initBingo(){
+  const reps = bingoRepNames();
+  if(!bingoRep || !reps.includes(bingoRep)) bingoRep = reps[0];
+  const rs = document.getElementById("bingoRepSel");
+  rs.innerHTML = reps.map(n => `<button class="btn ${n === bingoRep ? 'on' : ''}" data-brep="${n}">${n.split(" ")[0]}</button>`).join("");
+  rs.querySelectorAll("[data-brep]").forEach(b => b.addEventListener("click", () => {
+    bingoRep = b.dataset.brep;
+    rs.querySelectorAll(".btn").forEach(x => x.classList.remove("on"));
+    b.classList.add("on");
+    renderBingo();
+  }));
+  const weeks = bingoWeeksList();
+  if(!bingoWeek || !weeks.includes(bingoWeek)) bingoWeek = weeks[0];
+  const ws = document.getElementById("bingoWeekSel");
+  ws.innerHTML = weeks.map(wk => `<option value="${wk}" ${wk === bingoWeek ? 'selected' : ''}>Week of ${new Date(wk + "T00:00:00").toLocaleDateString(undefined, {day:"numeric", month:"short"})}</option>`).join("");
+  ws.onchange = () => { bingoWeek = ws.value; renderBingo(); };
+  renderBingo();
+}
+
+function loadBingo(){
+  fetch("data/bingo.json?t=" + Date.now(), {cache:"no-store"})
+    .then(r => { if(!r.ok) throw new Error("no bingo.json"); return r.json(); })
+    .then(d => { BINGO = d; if(d.daily_call_target) BINGO_CFG.target = d.daily_call_target; initBingo(); })
+    .catch(() => { BINGO = null; renderBingo(); });
+}
+loadBingo();
 </script>
 </body>
 </html>
