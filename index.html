@@ -234,13 +234,13 @@
   .tv-exit span{color:var(--muted);font-size:12px}
   body.tv-mode .tv-exit{display:block}
 
-  /* ── Bingo (faithful light card, styled after the printed BDR card) ── */
+  /* ── Bingo (dark surround, board keeps the printed-card colours) ── */
   .bingo-legend{display:flex;gap:5px;align-items:center;flex-wrap:wrap}
   .bingo-card{--bpink:#ff3d6e;--bnavy:#1b1e3c;--bink:#20242e;--bmut:#6b7280;
-    background:#fff;color:var(--bink);border-radius:16px;padding:22px 22px 26px;
-    box-shadow:0 12px 38px rgba(0,0,0,.34);max-width:1040px}
+    background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:16px;
+    padding:22px 22px 26px;max-width:1040px}
   .bingo-eyebrow{text-align:center;color:var(--bpink);font-size:13px;font-weight:800;letter-spacing:.16em;text-transform:uppercase}
-  .bingo-cardtitle{text-align:center;font-size:26px;font-weight:800;letter-spacing:-.01em;margin:2px 0 16px;color:#15181f}
+  .bingo-cardtitle{text-align:center;font-size:26px;font-weight:800;letter-spacing:-.01em;margin:2px 0 16px;color:var(--text)}
   .bingo-cardtitle .wk{color:var(--bpink);font-weight:700}
   .bingo-layout{display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start}
   .bingo-main{flex:1;min-width:340px}
@@ -268,31 +268,31 @@
   .bingo-cell.flash-pulse{animation:bingo-pulse .7s ease-in-out 3}
   @keyframes bingo-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06);box-shadow:0 0 0 4px #fde047 inset}}
 
-  /* rules + prizes rendered inside the card */
+  /* rules + prizes rendered inside the card (dark) */
   .bingo-foot{display:flex;gap:28px;flex-wrap:wrap;margin-top:20px}
   .bingo-foot > div{flex:1;min-width:238px}
   .bingo-sectitle{text-align:center;color:var(--bpink);font-size:15px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;margin-bottom:10px}
   .bingo-sectitle::before,.bingo-sectitle::after{content:"–";margin:0 8px}
-  .bingo-rules{list-style:none;margin:0;padding:0;font-size:12.5px;color:#374151;line-height:1.5}
+  .bingo-rules{list-style:none;margin:0;padding:0;font-size:12.5px;color:#c8d0dd;line-height:1.5}
   .bingo-rules li{position:relative;padding:4px 0 4px 16px}
   .bingo-rules li::before{content:"";position:absolute;left:0;top:11px;width:6px;height:6px;border-radius:50%;background:var(--bpink)}
   .bingo-prizes{display:flex;flex-direction:column;gap:5px}
-  .bingo-prize{display:flex;align-items:center;gap:10px;font-size:12.5px;padding:6px 11px;border-radius:8px;background:#f6f7f9}
-  .bingo-prize.won{background:#fef1f5;box-shadow:0 0 0 1.5px var(--bpink) inset}
-  .bingo-prize .pz-tier{font-weight:800;color:#15181f;min-width:120px}
-  .bingo-prize .pz-reward{color:#4b5563;flex:1}
+  .bingo-prize{display:flex;align-items:center;gap:10px;font-size:12.5px;padding:6px 11px;border-radius:8px;background:var(--panel2)}
+  .bingo-prize.won{background:#2e1a23;box-shadow:0 0 0 1.5px var(--bpink) inset}
+  .bingo-prize .pz-tier{font-weight:800;color:var(--text);min-width:120px}
+  .bingo-prize .pz-reward{color:var(--muted);flex:1}
   .bingo-prize .pz-badge{margin-left:auto;font-size:15px}
 
-  /* weekly leaderboard side panel (light) */
+  /* weekly leaderboard side panel (dark surround) */
   .bingo-side{display:flex;flex-direction:column;gap:8px;min-width:238px;flex:0 0 auto}
-  .bingo-sum-title{font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:.06em;font-weight:700}
+  .bingo-sum-title{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:700}
   .bingo-summary{display:flex;flex-direction:column;gap:6px}
-  .bingo-sum-row{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;background:#f6f7f9;border:1px solid #eceef1;font-size:13px}
+  .bingo-sum-row{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;background:var(--panel2);border:1px solid var(--border);font-size:13px}
   .bingo-sum-medal{width:16px;text-align:center}
-  .bingo-sum-name{font-weight:700;color:#20242e}
-  .bingo-sum-prize{margin-left:auto;font-size:11px;color:#6b7280;white-space:nowrap}
-  .bingo-sum-count{font-weight:800;color:#20242e;min-width:52px;text-align:right}
-  .bingo-sum-count .muted{color:#9aa1ac;font-weight:500;font-size:11px}
+  .bingo-sum-name{font-weight:700;color:var(--text)}
+  .bingo-sum-prize{margin-left:auto;font-size:11px;color:var(--muted);white-space:nowrap}
+  .bingo-sum-count{font-weight:800;color:var(--text);min-width:52px;text-align:right}
+  .bingo-sum-count .muted{color:var(--muted);font-weight:500;font-size:11px}
 
   /* full-line celebration flash */
   .bingo-flash{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;pointer-events:none;background:rgba(11,18,32,.55);opacity:0;overflow:hidden;animation:bingo-flash-in .45s ease-out forwards}
