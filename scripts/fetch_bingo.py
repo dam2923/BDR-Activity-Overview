@@ -11,16 +11,19 @@ risk. Shape consumed by the Bingo tab in index.html:
   "daily_call_target": 40,
   "reps": ["Tyreek Burke", ...],                       # BDRs who get a card
   "calls":    [{"date","time","rep","dur","disp"}],     # weekday calls, with time-of-day
-  "meetings": [{"booked_date","time","rep","lighthouse","net_new","outcome"}],
+  "meetings": [{"booked_date","booked_time","time","meeting_date","rep","lighthouse","net_new","pro","atlas","outcome"}],
   "deals":    [{"created_date","time","rep","amount","stage","type"}],
   "icp_contacts": [{"created_date","rep"}]              # ICP-fit prospects created by a rep
 }
 
 `lighthouse`  = the meeting involves a company with atlas_priority == "Lighthouse"
-                (Ross: Tier 1 target == Lighthouse).
-`net_new`     = the meeting involves a deal of type "New Logo Pro" (newbusiness).
-Association enrichment is best-effort: if it fails, flags fall back to False and
-the rest of the file still writes (meeting COUNT squares keep working).
+                (Ross: Tier 1 target == Lighthouse). Needs crm.objects.companies.read.
+`net_new`     = associated deal of type "New Logo Pro" (newbusiness).
+`pro`         = associated deal in the Kato Pro family (New Logo Pro / Renewal Pro / Expansion / Upsell).
+`atlas`       = associated deal of type "Atlas Only" (Atlas).
+Deal-based flags (net_new/pro/atlas) and the company-based flag (lighthouse) are read in
+SEPARATE best-effort blocks, so a missing companies scope can't disable the deal flags.
+`meeting_date`/`booked_time` support the "scheduled this week" / "before Weds 6pm" squares.
 
 Required env: HUBSPOT_TOKEN
 Optional env: TIMEZONE (default Europe/London), BINGO_REP_NAMES (comma list),
@@ -44,7 +47,7 @@ if not TOKEN:
 
 TZ = ZoneInfo(os.environ.get("TIMEZONE", "Europe/London"))
 WEEKS = int(os.environ.get("BINGO_WEEKS", "10"))
-DAILY_CALL_TARGET = int(os.environ.get("DAILY_CALL_TARGET", "40"))
+DAILY_CALL_TARGET = int(os.environ.get("DAILY_CALL_TARGET", "50"))  # 110% = 55, matching the card
 
 DEFAULT_BDRS = ["Tyreek Burke", "Jennifer Fasida", "Liam Bolger-Prentice", "Miles Smith", "Zoe Cornelius"]
 REP_NAMES = [n.strip() for n in os.environ.get("BINGO_REP_NAMES", "").split(",") if n.strip()] or DEFAULT_BDRS
@@ -53,6 +56,16 @@ BASE = "https://api.hubapi.com"
 H = {"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"}
 API_DELAY = 0.15
 NEW_LOGO_DEALTYPE = "newbusiness"   # dealtype value whose label is "New Logo Pro"
+PRO_DEALTYPES = {"newbusiness", "renewal", "expansion", "existingbusiness"}  # the "Kato Pro" product family
+ATLAS_DEALTYPES = {"Atlas"}         # dealtype value whose label is "Atlas Only"
+# Known dealstage id → label (both live pipelines), merged UNDER the live property options as a
+# fallback so the SQL/SQO squares resolve even if the properties API is unavailable at runtime.
+STAGE_FALLBACK = {
+    "946686494": "Sales Qualified Lead", "29855095": "Sales Qualified Opportunity",
+    "155861011": "Discovery", "155861012": "Demonstration", "155861013": "Proposal", "1086801027": "Contract",
+    "1366109514": "Sales Qualified Lead", "1366109515": "Sales Qualified Opportunity",
+    "1366109516": "Discovery", "1366109517": "Demonstration", "1366109518": "Proposal", "1366109519": "Contract",
+}
 
 
 def _req(url, data=None, method="GET"):
@@ -189,7 +202,7 @@ def main():
         sys.exit("ERROR: none of BINGO_REP_NAMES resolved to owner IDs.")
     rep_by_owner = {oid: name_by_owner[oid] for oid in owner_ids}
 
-    stage_labels = property_options("deals", "dealstage")
+    stage_labels = {**STAGE_FALLBACK, **property_options("deals", "dealstage")}
     type_labels = property_options("deals", "dealtype")
 
     ts_gte = {"propertyName": "hs_timestamp", "operator": "GTE", "value": iso_ms(start)}
@@ -236,34 +249,47 @@ def main():
                       "type": type_labels.get(p.get("dealtype"), p.get("dealtype") or "")})
     print(f"  deals: {len(deals)}", flush=True)
 
-    # ── Meetings (booked in window) + best-effort lighthouse / net_new enrichment ──
+    # ── Meetings (booked in window) + best-effort enrichment ──
+    # Deal-based flags (net_new/pro/atlas) and the company-based flag (lighthouse) are read in
+    # SEPARATE try blocks: the company read needs crm.objects.companies.read and must not take the
+    # deal flags down with it when that scope is missing.
     meeting_rows = search("meetings", [ts_gte, ts_lt, owner_in],
                           ["hs_timestamp", "hs_meeting_start_time", "hs_meeting_outcome", "hubspot_owner_id"])
-    meetings, flags = [], {}
+    meetings = []
+    ids = [str(r["id"]) for r in meeting_rows]
+    deal_flags = {}   # mid -> (net_new, pro, atlas)
+    comp_flags = {}   # mid -> lighthouse
+
     try:
-        ids = [str(r["id"]) for r in meeting_rows]
-        m2c = assoc_batch("meetings", "companies", ids)
         m2d = assoc_batch("meetings", "deals", ids)
-        comp_props = batch_read("companies", {c for cs in m2c.values() for c in cs}, ["atlas_priority"])
         deal_props = batch_read("deals", {d for ds in m2d.values() for d in ds}, ["dealtype"])
         for mid in ids:
-            lighthouse = any(comp_props.get(c, {}).get("atlas_priority") == "Lighthouse" for c in m2c.get(mid, []))
-            net_new = any(deal_props.get(d, {}).get("dealtype") == NEW_LOGO_DEALTYPE for d in m2d.get(mid, []))
-            flags[mid] = (lighthouse, net_new)
-    except Exception as e:  # noqa: BLE001 — enrichment is best-effort
-        print(f"  ⚠ meeting enrichment failed ({e}); lighthouse/net_new default to False", file=sys.stderr)
+            dts = {deal_props.get(d, {}).get("dealtype") for d in m2d.get(mid, [])}
+            deal_flags[mid] = (NEW_LOGO_DEALTYPE in dts, bool(dts & PRO_DEALTYPES), bool(dts & ATLAS_DEALTYPES))
+    except Exception as e:  # noqa: BLE001 — best-effort
+        print(f"  ⚠ meeting deal-enrichment failed ({e}); net_new/pro/atlas default to False", file=sys.stderr)
+
+    try:
+        m2c = assoc_batch("meetings", "companies", ids)
+        comp_props = batch_read("companies", {c for cs in m2c.values() for c in cs}, ["atlas_priority"])
+        for mid in ids:
+            comp_flags[mid] = any(comp_props.get(c, {}).get("atlas_priority") == "Lighthouse" for c in m2c.get(mid, []))
+    except Exception as e:  # noqa: BLE001 — needs crm.objects.companies.read
+        print(f"  ⚠ meeting company-enrichment failed ({e}); lighthouse defaults to False", file=sys.stderr)
 
     for r in meeting_rows:
         p = r.get("properties", {})
         rep = rep_by_owner.get(str(p.get("hubspot_owner_id")))
-        # booked date = record creation; time-of-day from the scheduled start (for the out-of-hours square)
-        booked, _ = local_date_time(r.get("createdAt") or p.get("hs_timestamp"))
-        _, tm = local_date_time(p.get("hs_meeting_start_time") or p.get("hs_timestamp"))
+        # booked date/time = record creation; meeting date/time-of-day = the scheduled start
+        booked, booked_tm = local_date_time(r.get("createdAt") or p.get("hs_timestamp"))
+        mtg_date, tm = local_date_time(p.get("hs_meeting_start_time") or p.get("hs_timestamp"))
         if not rep or not booked:
             continue
-        lighthouse, net_new = flags.get(str(r["id"]), (False, False))
-        meetings.append({"booked_date": booked, "time": tm, "rep": rep,
-                         "lighthouse": lighthouse, "net_new": net_new,
+        net_new, pro, atlas = deal_flags.get(str(r["id"]), (False, False, False))
+        meetings.append({"booked_date": booked, "booked_time": booked_tm, "time": tm,
+                         "meeting_date": mtg_date, "rep": rep,
+                         "lighthouse": comp_flags.get(str(r["id"]), False),
+                         "net_new": net_new, "pro": pro, "atlas": atlas,
                          "outcome": (p.get("hs_meeting_outcome") or "").strip()})
     print(f"  meetings: {len(meetings)}", flush=True)
 
