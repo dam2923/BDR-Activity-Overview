@@ -41,8 +41,8 @@ jobs:
           TIMEZONE: "Europe/London"
           REP_NAMES: "Tyreek Burke,Jennifer Fasida,Liam Bolger-Prentice,Zoe Cornelius,Miles Smith,George Watson,Henry McCloskey,Darien Bryan"
           BINGO_REP_NAMES: "Tyreek Burke,Jennifer Fasida,Liam Bolger-Prentice,Miles Smith,Zoe Cornelius"
-          DAILY_CALL_TARGET: "40"
-          BINGO_WEEKS: "10"
+          DAILY_CALL_TARGET: "50"
+          BINGO_WEEKS: "14"
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

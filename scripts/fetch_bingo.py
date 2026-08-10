@@ -46,7 +46,7 @@ if not TOKEN:
     sys.exit("ERROR: HUBSPOT_TOKEN env var is required")
 
 TZ = ZoneInfo(os.environ.get("TIMEZONE", "Europe/London"))
-WEEKS = int(os.environ.get("BINGO_WEEKS", "10"))
+WEEKS = int(os.environ.get("BINGO_WEEKS", "14"))  # covers a full quarter for the champion table
 DAILY_CALL_TARGET = int(os.environ.get("DAILY_CALL_TARGET", "50"))  # 110% = 55, matching the card
 
 DEFAULT_BDRS = ["Tyreek Burke", "Jennifer Fasida", "Liam Bolger-Prentice", "Miles Smith", "Zoe Cornelius"]
