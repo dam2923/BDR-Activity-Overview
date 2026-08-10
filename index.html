@@ -1603,7 +1603,7 @@ function buildBingoWeek(mondayIso){
   const monday = days[0];
   const win = {
     mondayCall: bingoWinner(calls.filter(c => c.date === monday), c => [c.time || "99:99"]),
-    firstMeeting: bingoWinner(meetings, m => [m.booked_date, m.time || "99:99"]),
+    firstMeeting: bingoWinner(meetings, m => [m.booked_date, m.booked_time || "99:99"]),
     first25k: bingoWinner(deals.filter(d => (d.amount || 0) >= 25000 && BINGO_SQL_STAGES.has(d.stage)), d => [d.created_date, d.time || "99:99"]),
   };
   const per = {};
