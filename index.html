@@ -1534,7 +1534,7 @@ const BINGO_SQUARES = [
   {n:6,  color:"white", kind:"auto",   label:"Book <b>2 meetings</b> scheduled for the <b>current week</b>",                     test:w => w.meetings.filter(m => m.meeting_date && m.meeting_date >= w.monday && m.meeting_date <= w.sunday).length >= 2},
   {n:7,  color:"red",   kind:"auto",   label:"Complete <b>60 calls</b> on a <b>Friday</b>",                                      test:w => countOn(w.calls, w.friday) >= 60},
   {n:8,  color:"white", kind:"manual", label:"Get a <b>referral/intro</b> from a prospect"},
-  {n:9,  color:"white", kind:"manual", label:"Have a longer-than-5-min call with a <b>Managing Director</b>"},
+  {n:9,  color:"white", kind:"auto",   label:"Have a longer-than-5-min call with a <b>Managing Director</b>", test:w => w.calls.some(c => c.md && (c.dur || 0) > 300)},
   {n:10, color:"white", kind:"manual", label:"Book a meeting from <b>LinkedIn</b> outreach"},
   // Row 3
   {n:11, color:"red",   kind:"manual", label:"Book <b>2 Society</b> meetings"},
@@ -1546,7 +1546,7 @@ const BINGO_SQUARES = [
   {n:16, color:"white", kind:"auto",   label:"Book <b>2 Atlas meetings</b> with <b>Lighthouse</b> Customers",                    test:w => w.meetings.filter(m => m.atlas && m.lighthouse).length >= 2},
   {n:17, color:"white", kind:"manual", label:"Share <b>1 good</b> and <b>1 bad</b> call — feedback to Max"},
   {n:18, color:"red",   kind:"auto",   label:"Book the <b>first meeting</b> of the week",                                       test:w => w.win.firstMeeting === w.rep},
-  {n:19, color:"white", kind:"manual", label:"Book <b>1 meeting</b> with a <b>Previous Customer</b>"},
+  {n:19, color:"white", kind:"auto",   label:"Book <b>1 meeting</b> with a <b>Previous Customer</b>", test:w => w.meetings.some(m => m.prev_customer) || w.deals.some(d => d.prev_customer)},
   {n:20, color:"red",   kind:"auto",   label:"First to create <b>£25k+ SQL pipe</b>",                                           test:w => w.win.first25k === w.rep},
   // Row 5
   {n:21, color:"white", kind:"manual", label:"Send <b>3 calls</b> showing the <b>talk track</b> (Pro or Atlas) with Max"},
