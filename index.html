@@ -1478,6 +1478,9 @@ const BINGO_CFG = {
   onepm: 13 * 60,       // 13:00
   wedsCut: 18 * 60,     // Wednesday 18:00 booking cutoff
 };
+// Quarter Champion accumulation starts from this launch date, not the calendar quarter start.
+// Only clamps when it falls after the quarter start; from the next quarter it's ignored automatically.
+const BINGO_TRACKING_START = "2026-08-10";   // team told about Bingo the morning of Mon 10 Aug 2026
 // "SQL and beyond" + "SQO" deal stages, matched by BOTH HubSpot stage id (across pipelines)
 // AND human label, so squares work whether bingo.json stores raw ids or resolved labels.
 const BINGO_SQL_STAGES = new Set([
@@ -1659,12 +1662,17 @@ function bingoCompletedLines(state){ const s = new Set(); BINGO_LINES.forEach((l
 function bingoQuarterInfo(){
   const now = new Date();
   const q = Math.floor(now.getMonth() / 3);
-  const qStart = new Date(now.getFullYear(), q * 3, 1);
+  const qStartMon = iso(mondayOf(new Date(now.getFullYear(), q * 3, 1)));
+  const launchMon = iso(mondayOf(dnum(BINGO_TRACKING_START)));
+  const firstMon = launchMon > qStartMon ? launchMon : qStartMon;   // start from the launch week
   const weeks = [];
-  let d = mondayOf(qStart);
+  let d = dnum(firstMon);
   const cur = iso(mondayOf(now));
   while(iso(d) <= cur){ weeks.push(iso(d)); d = addDays(d, 7); }
-  return { label: "Q" + (q + 1) + " " + now.getFullYear(), weeks, current: cur };
+  let label = "Q" + (q + 1) + " " + now.getFullYear();
+  if(firstMon === launchMon && launchMon > qStartMon)
+    label += " · since " + new Date(BINGO_TRACKING_START + "T00:00:00").toLocaleDateString(undefined, {day:"numeric", month:"short"});
+  return { label, weeks, current: cur };
 }
 function renderBingoQuarterHTML(){
   const { label, weeks, current } = bingoQuarterInfo();
