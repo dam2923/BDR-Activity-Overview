@@ -170,6 +170,20 @@ def search_groups(object_type, filter_groups, properties):
     return out
 
 
+def search_time_chunked(object_type, date_prop, extra_filters, properties, start_dt, end_dt, days=7):
+    """Search [start_dt, end_dt) in `days`-wide chunks so each sub-query stays under HubSpot's
+    10,000-results-per-query cap (BDR calls / org deals exceed it over a full quarter)."""
+    rows, cur = [], start_dt
+    step = timedelta(days=days)
+    while cur < end_dt:
+        nxt = min(cur + step, end_dt)
+        window = [{"propertyName": date_prop, "operator": "GTE", "value": iso_ms(cur)},
+                  {"propertyName": date_prop, "operator": "LT", "value": iso_ms(nxt)}]
+        rows.extend(search(object_type, window + list(extra_filters), properties))
+        cur = nxt
+    return rows
+
+
 def assoc_batch(from_type, to_type, ids):
     """v4 batch association read: {meetingId: [associatedIds]}."""
     result = {}
@@ -219,8 +233,9 @@ def main():
     # ── Calls (weekday, with time-of-day) ──
     calls = []
     long_calls = {}   # call_id -> call dict, only for >5min calls (candidates for the MD-call square)
-    for r in search("calls", [ts_gte, ts_lt, owner_in],
-                    ["hs_timestamp", "hubspot_owner_id", "hs_call_duration", "hs_call_disposition"]):
+    for r in search_time_chunked("calls", "hs_timestamp", [owner_in],
+                                 ["hs_timestamp", "hubspot_owner_id", "hs_call_duration", "hs_call_disposition"],
+                                 start, now):
         p = r.get("properties", {})
         rep = rep_by_owner.get(str(p.get("hubspot_owner_id")))
         date, tm = local_date_time(p.get("hs_timestamp"))
@@ -251,11 +266,10 @@ def main():
     # ── Deals (amount / stage / type), attributed to creator then owner ──
     deals = []
     deal_by_id = {}   # deal_id -> deal dict, for the previous-customer company enrichment
-    for r in search("deals",
-                    [{"propertyName": "createdate", "operator": "GTE", "value": iso_ms(start)},
-                     {"propertyName": "createdate", "operator": "LT", "value": iso_ms(now)}],
-                    ["createdate", "hubspot_owner_id", "hs_created_by_user_id",
-                     "amount", "amount_in_home_currency", "dealstage", "dealtype"]):
+    for r in search_time_chunked("deals", "createdate", [],
+                                 ["createdate", "hubspot_owner_id", "hs_created_by_user_id",
+                                  "amount", "amount_in_home_currency", "dealstage", "dealtype"],
+                                 start, now):
         p = r.get("properties", {})
         rep = users.get(str(p.get("hs_created_by_user_id") or "")) or name_by_owner.get(str(p.get("hubspot_owner_id") or ""))
         if rep not in REP_NAMES:
@@ -297,11 +311,15 @@ def main():
     # OWNED by a BDR OR CREATED (booked) by a BDR (hs_created_by), then credit the booker below.
     mtg_created_gte = {"propertyName": "hs_createdate", "operator": "GTE", "value": iso_ms(start)}
     creator_in = {"propertyName": "hs_created_by", "operator": "IN", "values": owner_ids}
-    meeting_rows = search_groups("meetings",
-                                 [{"filters": [mtg_created_gte, owner_in]},
-                                  {"filters": [mtg_created_gte, creator_in]}],
-                                 ["hs_timestamp", "hs_meeting_start_time", "hs_meeting_outcome",
-                                  "hubspot_owner_id", "hs_createdate", "hs_created_by"])
+    mtg_props = ["hs_timestamp", "hs_meeting_start_time", "hs_meeting_outcome",
+                 "hubspot_owner_id", "hs_createdate", "hs_created_by"]
+    try:
+        meeting_rows = search_groups("meetings",
+                                     [{"filters": [mtg_created_gte, owner_in]},
+                                      {"filters": [mtg_created_gte, creator_in]}], mtg_props)
+    except Exception as e:  # noqa: BLE001 — if hs_created_by isn't filterable for this token, degrade to owner-only
+        print(f"  ⚠ meeting creator-filter search failed ({e}); using owner-only", file=sys.stderr)
+        meeting_rows = search("meetings", [mtg_created_gte, owner_in], mtg_props)
     meetings = []
     ids = [str(r["id"]) for r in meeting_rows]
     deal_flags = {}   # mid -> (net_new, pro, atlas)
@@ -349,11 +367,8 @@ def main():
     # ── ICP prospects: contacts created in window by a rep, whose company is ICP-fit ──
     icp = []
     try:
-        contact_rows = search("contacts",
-                              [{"propertyName": "createdate", "operator": "GTE", "value": iso_ms(start)},
-                               {"propertyName": "createdate", "operator": "LT", "value": iso_ms(now)},
-                               owner_in],
-                              ["createdate", "hubspot_owner_id"])
+        contact_rows = search_time_chunked("contacts", "createdate", [owner_in],
+                                            ["createdate", "hubspot_owner_id"], start, now)
         cids = [str(r["id"]) for r in contact_rows]
         c2c = assoc_batch("contacts", "companies", cids)
         icp_props = batch_read("companies", {c for cs in c2c.values() for c in cs}, ["sc_icp_fit"])
