@@ -151,10 +151,15 @@ def local_date_time(ts):
 
 
 def search(object_type, filters, properties):
-    """Generic paginated /crm/v3/objects/{type}/search."""
+    """Generic paginated /crm/v3/objects/{type}/search (single filter group)."""
+    return search_groups(object_type, [{"filters": filters}], properties)
+
+
+def search_groups(object_type, filter_groups, properties):
+    """Paginated search taking pre-built filterGroups (OR-combined; HubSpot dedupes results)."""
     out, after = [], None
     while True:
-        body = {"filterGroups": [{"filters": filters}], "properties": properties, "limit": 100}
+        body = {"filterGroups": filter_groups, "properties": properties, "limit": 100}
         if after:
             body["after"] = after
         data = http_post(f"{BASE}/crm/v3/objects/{object_type}/search", body)
@@ -288,9 +293,15 @@ def main():
     # Deal-based flags (net_new/pro/atlas) and company-based flags (lighthouse/prev_customer) are read in
     # SEPARATE try blocks: the company read needs crm.objects.companies.read and must not take the
     # deal flags down with it when that scope is missing.
+    # BDR-booked meetings are often handed to an AE as owner, so fetch meetings created in-window that are
+    # OWNED by a BDR OR CREATED (booked) by a BDR (hs_created_by), then credit the booker below.
     mtg_created_gte = {"propertyName": "hs_createdate", "operator": "GTE", "value": iso_ms(start)}
-    meeting_rows = search("meetings", [mtg_created_gte, owner_in],
-                          ["hs_timestamp", "hs_meeting_start_time", "hs_meeting_outcome", "hubspot_owner_id", "hs_createdate"])
+    creator_in = {"propertyName": "hs_created_by", "operator": "IN", "values": owner_ids}
+    meeting_rows = search_groups("meetings",
+                                 [{"filters": [mtg_created_gte, owner_in]},
+                                  {"filters": [mtg_created_gte, creator_in]}],
+                                 ["hs_timestamp", "hs_meeting_start_time", "hs_meeting_outcome",
+                                  "hubspot_owner_id", "hs_createdate", "hs_created_by"])
     meetings = []
     ids = [str(r["id"]) for r in meeting_rows]
     deal_flags = {}   # mid -> (net_new, pro, atlas)
@@ -318,11 +329,13 @@ def main():
 
     for r in meeting_rows:
         p = r.get("properties", {})
-        rep = rep_by_owner.get(str(p.get("hubspot_owner_id")))
+        # credit the BDR who BOOKED it (creator); fall back to the owner when the creator isn't a BDR
+        creator = name_by_owner.get(str(p.get("hs_created_by") or ""))
+        rep = creator if creator in REP_NAMES else rep_by_owner.get(str(p.get("hubspot_owner_id")))
         # booked date/time = record creation; meeting date/time-of-day = the scheduled start
         booked, booked_tm = local_date_time(r.get("createdAt") or p.get("hs_createdate") or p.get("hs_timestamp"))
         mtg_date, tm = local_date_time(p.get("hs_meeting_start_time") or p.get("hs_timestamp"))
-        if not rep or not booked:
+        if rep not in REP_NAMES or not booked:
             continue
         net_new, pro, atlas = deal_flags.get(str(r["id"]), (False, False, False))
         meetings.append({"booked_date": booked, "booked_time": booked_tm, "time": tm,
