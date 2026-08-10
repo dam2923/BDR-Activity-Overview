@@ -10,9 +10,9 @@ risk. Shape consumed by the Bingo tab in index.html:
   "timezone": "Europe/London",
   "daily_call_target": 40,
   "reps": ["Tyreek Burke", ...],                       # BDRs who get a card
-  "calls":    [{"date","time","rep","dur","disp"}],     # weekday calls, with time-of-day
-  "meetings": [{"booked_date","booked_time","time","meeting_date","rep","lighthouse","net_new","pro","atlas","outcome"}],
-  "deals":    [{"created_date","time","rep","amount","stage","type"}],
+  "calls":    [{"date","time","rep","dur","disp","md?"}],  # md = >5min call associated w/ a Managing Director
+  "meetings": [{"booked_date","booked_time","time","meeting_date","rep","lighthouse","net_new","pro","atlas","prev_customer","outcome"}],
+  "deals":    [{"created_date","time","rep","amount","stage","type","prev_customer?"}],
   "icp_contacts": [{"created_date","rep"}]              # ICP-fit prospects created by a rep
 }
 
@@ -58,6 +58,8 @@ API_DELAY = 0.15
 NEW_LOGO_DEALTYPE = "newbusiness"   # dealtype value whose label is "New Logo Pro"
 PRO_DEALTYPES = {"newbusiness", "renewal", "expansion", "existingbusiness"}  # the "Kato Pro" product family
 ATLAS_DEALTYPES = {"Atlas"}         # dealtype value whose label is "Atlas Only"
+PREV_CUSTOMER_STATUS = "Previous Customer"   # company_status value for the "previous customer" square
+MD_TITLE = "managing director"      # case-insensitive substring match on contact jobtitle for the MD-call square
 # Known dealstage id → label (both live pipelines), merged UNDER the live property options as a
 # fallback so the SQL/SQO squares resolve even if the properties API is unavailable at runtime.
 STAGE_FALLBACK = {
@@ -211,6 +213,7 @@ def main():
 
     # ── Calls (weekday, with time-of-day) ──
     calls = []
+    long_calls = {}   # call_id -> call dict, only for >5min calls (candidates for the MD-call square)
     for r in search("calls", [ts_gte, ts_lt, owner_in],
                     ["hs_timestamp", "hubspot_owner_id", "hs_call_duration", "hs_call_disposition"]):
         p = r.get("properties", {})
@@ -221,12 +224,28 @@ def main():
         if datetime.strptime(date, "%Y-%m-%d").weekday() >= 5:   # skip weekends, like the main dashboard
             continue
         dur_ms = int(p.get("hs_call_duration") or 0) if str(p.get("hs_call_duration") or "0").isdigit() else 0
-        calls.append({"date": date, "time": tm, "rep": rep, "dur": dur_ms // 1000,
-                      "disp": (p.get("hs_call_disposition") or "").strip()})
-    print(f"  calls: {len(calls)}", flush=True)
+        c = {"date": date, "time": tm, "rep": rep, "dur": dur_ms // 1000,
+             "disp": (p.get("hs_call_disposition") or "").strip()}
+        calls.append(c)
+        if c["dur"] > 300:                      # only >5min calls can satisfy the Managing-Director square
+            long_calls[str(r["id"])] = c
+    print(f"  calls: {len(calls)}  (>5min: {len(long_calls)})", flush=True)
+
+    # md flag: a >5min call associated with a contact whose Job Title contains "Managing Director"
+    if long_calls:
+        try:
+            c2c = assoc_batch("calls", "contacts", list(long_calls.keys()))
+            titles = batch_read("contacts", {cid for cids in c2c.values() for cid in cids}, ["jobtitle"])
+            for call_id, cdict in long_calls.items():
+                if any(MD_TITLE in (titles.get(cid, {}).get("jobtitle") or "").lower()
+                       for cid in c2c.get(call_id, [])):
+                    cdict["md"] = True
+        except Exception as e:  # noqa: BLE001 — best-effort
+            print(f"  ⚠ call MD-title enrichment failed ({e}); md defaults to False", file=sys.stderr)
 
     # ── Deals (amount / stage / type), attributed to creator then owner ──
     deals = []
+    deal_by_id = {}   # deal_id -> deal dict, for the previous-customer company enrichment
     for r in search("deals",
                     [{"propertyName": "createdate", "operator": "GTE", "value": iso_ms(start)},
                      {"propertyName": "createdate", "operator": "LT", "value": iso_ms(now)}],
@@ -244,10 +263,23 @@ def main():
             amt = float(amt)
         except (ValueError, TypeError):
             amt = 0.0
-        deals.append({"created_date": date, "time": tm, "rep": rep, "amount": amt,
-                      "stage": stage_labels.get(p.get("dealstage"), p.get("dealstage") or ""),
-                      "type": type_labels.get(p.get("dealtype"), p.get("dealtype") or "")})
+        d = {"created_date": date, "time": tm, "rep": rep, "amount": amt,
+             "stage": stage_labels.get(p.get("dealstage"), p.get("dealstage") or ""),
+             "type": type_labels.get(p.get("dealtype"), p.get("dealtype") or "")}
+        deals.append(d)
+        deal_by_id[str(r["id"])] = d
     print(f"  deals: {len(deals)}", flush=True)
+
+    # prev_customer flag: deal's associated company has company_status == "Previous Customer"
+    if deal_by_id:
+        try:
+            d2c = assoc_batch("deals", "companies", list(deal_by_id.keys()))
+            dcomp = batch_read("companies", {c for cs in d2c.values() for c in cs}, ["company_status"])
+            for did, d in deal_by_id.items():
+                if any(dcomp.get(c, {}).get("company_status") == PREV_CUSTOMER_STATUS for c in d2c.get(did, [])):
+                    d["prev_customer"] = True
+        except Exception as e:  # noqa: BLE001 — needs crm.objects.companies.read
+            print(f"  ⚠ deal prev-customer enrichment failed ({e}); defaults to False", file=sys.stderr)
 
     # ── Meetings (booked in window) + best-effort enrichment ──
     # Deal-based flags (net_new/pro/atlas) and the company-based flag (lighthouse) are read in
@@ -259,6 +291,7 @@ def main():
     ids = [str(r["id"]) for r in meeting_rows]
     deal_flags = {}   # mid -> (net_new, pro, atlas)
     comp_flags = {}   # mid -> lighthouse
+    prev_flags = {}   # mid -> previous-customer
 
     try:
         m2d = assoc_batch("meetings", "deals", ids)
@@ -271,11 +304,13 @@ def main():
 
     try:
         m2c = assoc_batch("meetings", "companies", ids)
-        comp_props = batch_read("companies", {c for cs in m2c.values() for c in cs}, ["atlas_priority"])
+        comp_props = batch_read("companies", {c for cs in m2c.values() for c in cs}, ["atlas_priority", "company_status"])
         for mid in ids:
-            comp_flags[mid] = any(comp_props.get(c, {}).get("atlas_priority") == "Lighthouse" for c in m2c.get(mid, []))
+            cos = [comp_props.get(c, {}) for c in m2c.get(mid, [])]
+            comp_flags[mid] = any(x.get("atlas_priority") == "Lighthouse" for x in cos)
+            prev_flags[mid] = any(x.get("company_status") == PREV_CUSTOMER_STATUS for x in cos)
     except Exception as e:  # noqa: BLE001 — needs crm.objects.companies.read
-        print(f"  ⚠ meeting company-enrichment failed ({e}); lighthouse defaults to False", file=sys.stderr)
+        print(f"  ⚠ meeting company-enrichment failed ({e}); lighthouse/prev_customer default to False", file=sys.stderr)
 
     for r in meeting_rows:
         p = r.get("properties", {})
@@ -290,6 +325,7 @@ def main():
                          "meeting_date": mtg_date, "rep": rep,
                          "lighthouse": comp_flags.get(str(r["id"]), False),
                          "net_new": net_new, "pro": pro, "atlas": atlas,
+                         "prev_customer": prev_flags.get(str(r["id"]), False),
                          "outcome": (p.get("hs_meeting_outcome") or "").strip()})
     print(f"  meetings: {len(meetings)}", flush=True)
 
