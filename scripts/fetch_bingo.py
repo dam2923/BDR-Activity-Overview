@@ -281,12 +281,16 @@ def main():
         except Exception as e:  # noqa: BLE001 — needs crm.objects.companies.read
             print(f"  ⚠ deal prev-customer enrichment failed ({e}); defaults to False", file=sys.stderr)
 
-    # ── Meetings (booked in window) + best-effort enrichment ──
-    # Deal-based flags (net_new/pro/atlas) and the company-based flag (lighthouse) are read in
+    # ── Meetings + best-effort enrichment ──
+    # Keyed by BOOKING date (hs_createdate), NOT scheduled start (hs_timestamp): a meeting booked this
+    # week is usually scheduled for a FUTURE date, and the old `hs_timestamp < now` filter dropped those —
+    # which broke "book the first meeting of the week" and the other booking-based meeting squares.
+    # Deal-based flags (net_new/pro/atlas) and company-based flags (lighthouse/prev_customer) are read in
     # SEPARATE try blocks: the company read needs crm.objects.companies.read and must not take the
     # deal flags down with it when that scope is missing.
-    meeting_rows = search("meetings", [ts_gte, ts_lt, owner_in],
-                          ["hs_timestamp", "hs_meeting_start_time", "hs_meeting_outcome", "hubspot_owner_id"])
+    mtg_created_gte = {"propertyName": "hs_createdate", "operator": "GTE", "value": iso_ms(start)}
+    meeting_rows = search("meetings", [mtg_created_gte, owner_in],
+                          ["hs_timestamp", "hs_meeting_start_time", "hs_meeting_outcome", "hubspot_owner_id", "hs_createdate"])
     meetings = []
     ids = [str(r["id"]) for r in meeting_rows]
     deal_flags = {}   # mid -> (net_new, pro, atlas)
@@ -316,7 +320,7 @@ def main():
         p = r.get("properties", {})
         rep = rep_by_owner.get(str(p.get("hubspot_owner_id")))
         # booked date/time = record creation; meeting date/time-of-day = the scheduled start
-        booked, booked_tm = local_date_time(r.get("createdAt") or p.get("hs_timestamp"))
+        booked, booked_tm = local_date_time(r.get("createdAt") or p.get("hs_createdate") or p.get("hs_timestamp"))
         mtg_date, tm = local_date_time(p.get("hs_meeting_start_time") or p.get("hs_timestamp"))
         if not rep or not booked:
             continue
