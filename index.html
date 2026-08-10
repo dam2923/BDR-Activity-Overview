@@ -242,8 +242,14 @@
   .bingo-eyebrow{text-align:center;color:var(--bpink);font-size:13px;font-weight:800;letter-spacing:.16em;text-transform:uppercase}
   .bingo-cardtitle{text-align:center;font-size:26px;font-weight:800;letter-spacing:-.01em;margin:2px 0 16px;color:var(--text)}
   .bingo-cardtitle .wk{color:var(--bpink);font-weight:700}
-  .bingo-layout{display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start}
-  .bingo-main{flex:1;min-width:340px}
+  .bingo-body{display:grid;gap:22px;align-items:start;
+    grid-template-columns:minmax(0,1fr) 264px;
+    grid-template-areas:"board week" "foot week" "qtr qtr"}
+  .bingo-main{grid-area:board;min-width:0}
+  .bingo-side{grid-area:week}
+  .bingo-foot{grid-area:foot}
+  .bingo-quarter{grid-area:qtr}
+  @media(max-width:880px){.bingo-body{grid-template-columns:1fr;grid-template-areas:"board" "week" "foot" "qtr"}}
   .bingo-hdr{display:grid;grid-template-columns:repeat(5,1fr);background:var(--bnavy);border-radius:10px 10px 0 0;overflow:hidden}
   .bingo-hdr span{color:#fff;font-size:30px;font-weight:800;text-align:center;padding:7px 0;letter-spacing:.02em}
   .bingo-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;padding:6px;background:var(--bnavy);border-radius:0 0 10px 10px}
@@ -294,6 +300,23 @@
   .bingo-sum-count{font-weight:800;color:var(--text);min-width:52px;text-align:right}
   .bingo-sum-count .muted{color:var(--muted);font-weight:500;font-size:11px}
 
+  /* quarter champion table (£200 build-up) */
+  .bingo-quarter{margin-top:2px}
+  .bingo-qtitle{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:700;margin-bottom:9px}
+  .bingo-qtitle b{color:var(--bpink)}
+  .bingo-qwrap{overflow-x:auto}
+  .bingo-qtable{width:100%;border-collapse:collapse;font-size:12px;white-space:nowrap}
+  .bingo-qtable th,.bingo-qtable td{padding:6px 9px;text-align:center;border-bottom:1px solid var(--border)}
+  .bingo-qtable th:first-child,.bingo-qtable td:first-child{text-align:left;padding-left:2px}
+  .bingo-qtable thead th{color:var(--muted);font-weight:600;font-size:11px}
+  .bingo-qtable th.qcur,.bingo-qtable td.qcur{background:rgba(255,61,110,.10)}
+  .bingo-qtable .qname{display:inline-flex;align-items:center;gap:7px;font-weight:700;color:var(--text)}
+  .bingo-qtable td.zero{color:#586274}
+  .bingo-qtable .qtot-h{color:var(--text)}
+  .bingo-qtable .qtotal{font-weight:800;color:var(--text);font-size:14px}
+  .bingo-qtable tr.lead{background:#2e1a23}
+  .bingo-qtable tr.lead .qtotal{color:var(--bpink)}
+
   /* full-line celebration flash */
   .bingo-flash{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;pointer-events:none;background:rgba(11,18,32,.55);opacity:0;overflow:hidden;animation:bingo-flash-in .45s ease-out forwards}
   .bingo-flash.out{animation:bingo-flash-out .5s ease-in forwards}
@@ -308,9 +331,17 @@
   @keyframes bingo-flash-pop{to{transform:scale(1)}}
   @keyframes bingo-fall{to{transform:translateY(104vh) rotate(620deg);opacity:.85}}
 
-  body.tv-mode .bingo-card{max-width:none}
-  body.tv-mode .bingo-cell{font-size:13px;min-height:132px}
-  body.tv-mode .bingo-hdr span{font-size:34px}
+  body.tv-mode .bingo-card{max-width:none;background:transparent;border:none;padding:0}
+  body.tv-mode .bingo-eyebrow{display:none}
+  body.tv-mode .bingo-cardtitle{margin:0 0 10px;font-size:22px;text-align:left}
+  body.tv-mode .bingo-body{grid-template-columns:1.5fr 1fr;grid-template-rows:auto 1fr;
+    grid-template-areas:"board week" "board qtr";gap:18px;height:calc(100vh - 104px)}
+  body.tv-mode .bingo-foot{display:none}
+  body.tv-mode .bingo-main{display:flex;flex-direction:column;min-height:0}
+  body.tv-mode .bingo-grid{flex:1;grid-template-rows:repeat(5,minmax(0,1fr))}
+  body.tv-mode .bingo-cell{font-size:13px;min-height:0}
+  body.tv-mode .bingo-side,body.tv-mode .bingo-quarter{min-height:0;overflow:auto}
+  body.tv-mode .bingo-hdr span{font-size:30px}
   body.tv-mode .bingo-av{width:26px;height:26px;font-size:11px}
 </style>
 </head>
@@ -487,6 +518,7 @@
       <div style="display:flex;gap:8px;align-items:center">
         <span class="label">Week</span>
         <select class="ctrl" id="bingoWeekSel"></select>
+        <button class="tv-btn" id="tvModeBtnBingo">&#x1F4FA; TV Mode</button>
       </div>
     </div>
     <div id="bingoBody"><div class="lb-empty">Loading bingo&hellip;</div></div>
@@ -575,6 +607,7 @@ function exitTV(){
 }
 document.getElementById("tvModeBtn").addEventListener("click", ()=>enterTV("tab-pipeline"));
 document.getElementById("tvModeBtnQtr").addEventListener("click", ()=>enterTV("tab-quarter"));
+document.getElementById("tvModeBtnBingo").addEventListener("click", ()=>enterTV("tab-bingo"));
 document.getElementById("tvExit").addEventListener("click", exitTV);
 document.addEventListener("keydown",(e)=>{ if(e.key==="Escape") exitTV(); });
 document.addEventListener("fullscreenchange",()=>{
@@ -625,7 +658,7 @@ if(urlParams.has("refresh")){
   if(mins > 0) setRefreshRate(mins * 60);
 }
 
-const urlTab = urlParams.get("tab") || (urlParams.has("tv") ? (urlParams.get("tv")==="quarter" ? "quarter" : "pipeline") : null);
+const urlTab = urlParams.get("tab") || (urlParams.has("tv") ? (["quarter","bingo"].includes(urlParams.get("tv")) ? urlParams.get("tv") : "pipeline") : null);
 if(urlTab){
   document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
   document.querySelectorAll(".tab-panel").forEach(p=>p.classList.remove("active"));
@@ -637,7 +670,7 @@ if(urlTab){
 
 if(urlParams.has("tv")){
   const tvVal = urlParams.get("tv");
-  const tvTabId = tvVal === "quarter" ? "tab-quarter" : "tab-pipeline";
+  const tvTabId = tvVal === "quarter" ? "tab-quarter" : tvVal === "bingo" ? "tab-bingo" : "tab-pipeline";
   setTimeout(()=> enterTV(tvTabId), 500);
 }
 
@@ -1454,7 +1487,7 @@ const BINGO_SQL_STAGES = new Set([
 ]);
 const BINGO_SQO_STAGES = new Set(["29855095", "1366109515", "Sales Qualified Opportunity"]);
 
-let BINGO = null, bingoWeek = null;
+let BINGO = null, bingoWeek = null, bingoAutoWeek = true;
 
 function repMeta(name){
   const r = REPS.find(x => x.name === name);
@@ -1471,9 +1504,15 @@ const dnum = s => new Date(s + "T00:00:00");
 function anyDay(list, thresh, keyFn){ const o = {}; list.forEach(x => { const k = keyFn ? keyFn(x) : x.date; o[k] = (o[k] || 0) + 1; }); return Object.values(o).some(n => n >= thresh); }
 function anyDayFilter(list, pred, thresh){ const o = {}; list.filter(pred).forEach(x => { o[x.date] = (o[x.date] || 0) + 1; }); return Object.values(o).some(n => n >= thresh); }
 function countOn(list, date){ return list.filter(x => x.date === date).length; }
-// every weekday present in `days` (Mon–Fri) has >= 2 calls before 9am
+// Per-date cutoff override for the "calls before 9am" square (minutes from midnight).
+// Default 09:00; list a date to relax/tighten it that day only — self-reverts for dates not listed.
+const BINGO_BEFORE9_OVERRIDES = { "2026-08-10": 10 * 60 };   // Mon 10 Aug 2026: before 10am; back to 9am from 11 Aug
+// every weekday present in `days` has >= 2 calls before its cutoff (default 9am)
 function everyWeekdayBefore9(calls, days){
-  return days.every(d => calls.filter(c => c.date === d && hmin(c.time) < BINGO_CFG.before9).length >= 2);
+  return days.every(d => {
+    const cut = BINGO_BEFORE9_OVERRIDES[d] || BINGO_CFG.before9;
+    return calls.filter(c => c.date === d && hmin(c.time) < cut).length >= 2;
+  });
 }
 // meeting booked before Wednesday 18:00 (uses booked_time; falls back to date-only when absent)
 function bookedBeforeWeds6pm(m, days){
@@ -1539,9 +1578,8 @@ function bingoWeeksList(){
     (BINGO.deals || []).forEach(d => add(d.created_date));
     (BINGO.icp_contacts || []).forEach(c => add(c.created_date));
   }
-  const arr = [...set].sort().reverse();
-  if(!arr.length) arr.push(iso(mondayOf(new Date())));
-  return arr;
+  set.add(iso(mondayOf(new Date())));   // always include the current week so the board resets Mon 00:00
+  return [...set].sort().reverse();
 }
 
 // earliest rep across events by a sort key; returns rep name or null
@@ -1582,7 +1620,7 @@ function bingoManualToggle(rep, wk, n){ try { const k = bingoManualKey(rep, wk, 
 
 function bingoState(w){
   return BINGO_SQUARES.map(sq => {
-    if(sq.kind === "manual") return bingoManualGet(w.rep, bingoWeek, sq.n);
+    if(sq.kind === "manual") return bingoManualGet(w.rep, w.monday, sq.n);
     try { return !!sq.test(w); } catch(e){ return false; }
   });
 }
@@ -1616,6 +1654,44 @@ function bingoLinePrize(lines){
 // line-completion flash state — per week+rep snapshots so pre-existing lines never re-flash
 let bingoLineSnap = {}, bingoSeeded = {};
 function bingoCompletedLines(state){ const s = new Set(); BINGO_LINES.forEach((line, li) => { if(line.every(i => state[i])) s.add(li); }); return s; }
+
+// ---- Quarter Champion (£200): cumulative squares marked across every week of the quarter ----
+function bingoQuarterInfo(){
+  const now = new Date();
+  const q = Math.floor(now.getMonth() / 3);
+  const qStart = new Date(now.getFullYear(), q * 3, 1);
+  const weeks = [];
+  let d = mondayOf(qStart);
+  const cur = iso(mondayOf(now));
+  while(iso(d) <= cur){ weeks.push(iso(d)); d = addDays(d, 7); }
+  return { label: "Q" + (q + 1) + " " + now.getFullYear(), weeks, current: cur };
+}
+function renderBingoQuarterHTML(){
+  const { label, weeks, current } = bingoQuarterInfo();
+  const reps = bingoRepNames();
+  const agg = {}; reps.forEach(r => { agg[r] = { r, perWeek: [], total: 0 }; });
+  weeks.forEach(wk => {
+    const per = buildBingoWeek(wk);
+    reps.forEach(r => { const n = bingoState(per[r]).filter(Boolean).length; agg[r].perWeek.push(n); agg[r].total += n; });
+  });
+  const rows = reps.map(r => agg[r]).sort((a, b) => b.total - a.total);
+  const head = `<th>BDR</th>` + weeks.map(wk => {
+    const d = new Date(wk + "T00:00:00");
+    const full = d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+    return `<th class="${wk === current ? "qcur" : ""}" title="w/c ${full}">${d.getDate()}/${d.getMonth() + 1}</th>`;
+  }).join("") + `<th class="qtot-h">Total</th>`;
+  const bodyRows = rows.map((row, i) => {
+    const lead = i === 0 && row.total > 0;
+    const crown = lead ? "👑 " : "";
+    const cells = row.perWeek.map((n, wi) =>
+      `<td class="${weeks[wi] === current ? "qcur" : ""} ${n ? "" : "zero"}">${n || "·"}</td>`).join("");
+    return `<tr class="${lead ? "lead" : ""}"><td><span class="qname">${crown}${avatarSpan(row.r)}${repMeta(row.r).first}</span></td>${cells}<td class="qtotal">${row.total}</td></tr>`;
+  }).join("");
+  return `<div class="bingo-quarter">`
+    + `<div class="bingo-qtitle">Quarter Champion — <b>${label}</b> · £200 Amazon voucher</div>`
+    + `<div class="bingo-qwrap"><table class="bingo-qtable"><thead><tr>${head}</tr></thead><tbody>${bodyRows}</tbody></table></div>`
+    + `</div>`;
+}
 
 function renderBingo(){
   const body = document.getElementById("bingoBody");
@@ -1677,17 +1753,19 @@ function renderBingo(){
     + `<li>Bingo resets every week (Mon–Sun)</li></ul>`;
 
   const wk = new Date(bingoWeek + "T00:00:00").toLocaleDateString(undefined, {day:"numeric", month:"short"});
+  const quarterHTML = renderBingoQuarterHTML();
   body.innerHTML = `<div class="bingo-card">`
     + `<div class="bingo-eyebrow">Business Development Team</div>`
     + `<div class="bingo-cardtitle">Weekly Bingo <span class="wk">· w/c ${wk}</span></div>`
-    + `<div class="bingo-layout">`
+    + `<div class="bingo-body">`
     +   `<div class="bingo-main">`
     +     `<div class="bingo-hdr"><span>B</span><span>I</span><span>N</span><span>G</span><span>O</span></div>`
     +     `<div class="bingo-grid">${cells}</div>`
-    +     `<div class="bingo-foot"><div><div class="bingo-sectitle">Rules</div>${rulesHTML}</div>`
-    +       `<div><div class="bingo-sectitle">Prizes</div><div class="bingo-prizes">${prizesHTML}</div></div></div>`
     +   `</div>`
     +   `<div class="bingo-side"><div class="bingo-sum-title">This week</div><div class="bingo-summary">${summaryHTML}</div></div>`
+    +   `<div class="bingo-foot"><div><div class="bingo-sectitle">Rules</div>${rulesHTML}</div>`
+    +     `<div><div class="bingo-sectitle">Prizes</div><div class="bingo-prizes">${prizesHTML}</div></div></div>`
+    +   quarterHTML
     + `</div></div>`;
 
   body.querySelectorAll(".btn-av").forEach(btn => btn.addEventListener("click", (e) => {
@@ -1753,10 +1831,12 @@ function initBingo(){
   legend.className = "bingo-legend";
   legend.innerHTML = reps.map(avatarSpan).join("");
   const weeks = bingoWeeksList();
-  if(!bingoWeek || !weeks.includes(bingoWeek)) bingoWeek = weeks[0];
+  const curWeek = iso(mondayOf(new Date()));
+  if(bingoAutoWeek) bingoWeek = curWeek;                         // auto-track the current week (resets Mon 00:00)
+  else if(!bingoWeek || !weeks.includes(bingoWeek)) bingoWeek = weeks[0];
   const ws = document.getElementById("bingoWeekSel");
   ws.innerHTML = weeks.map(wk => `<option value="${wk}" ${wk === bingoWeek ? 'selected' : ''}>Week of ${new Date(wk + "T00:00:00").toLocaleDateString(undefined, {day:"numeric", month:"short"})}</option>`).join("");
-  ws.onchange = () => { bingoWeek = ws.value; renderBingo(); };
+  ws.onchange = () => { bingoWeek = ws.value; bingoAutoWeek = (bingoWeek === iso(mondayOf(new Date()))); renderBingo(); };
   renderBingo();
 }
 
@@ -1767,6 +1847,7 @@ function loadBingo(){
     .catch(() => { BINGO = null; renderBingo(); });
 }
 loadBingo();
+setInterval(loadBingo, 10 * 60 * 1000);   // refresh bingo data + roll to the new week each Monday 00:00
 </script>
 </body>
 </html>

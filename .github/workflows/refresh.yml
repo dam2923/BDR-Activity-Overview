@@ -48,8 +48,8 @@ jobs:
           TIMEZONE: "Europe/London"
           # BDRs who get a bingo card (subset of REP_NAMES above).
           BINGO_REP_NAMES: "Tyreek Burke,Jennifer Fasida,Liam Bolger-Prentice,Miles Smith,Zoe Cornelius"
-          DAILY_CALL_TARGET: "40"     # drives the "105% of daily call target" square
-          BINGO_WEEKS: "10"           # rolling window of weeks to include
+          DAILY_CALL_TARGET: "50"     # drives the "110% of daily call target (55)" square
+          BINGO_WEEKS: "14"           # rolling window — covers a full quarter for the champion table
         run: python scripts/fetch_bingo.py
 
       - name: Commit refreshed data
