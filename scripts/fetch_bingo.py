@@ -272,7 +272,10 @@ def main():
                                   "amount", "amount_in_home_currency", "dealstage", "dealtype", "pipeline"],
                                  start, now):
         p = r.get("properties", {})
-        rep = users.get(str(p.get("hs_created_by_user_id") or "")) or name_by_owner.get(str(p.get("hubspot_owner_id") or ""))
+        # credit the BDR who CREATED the deal (resolve via user-id OR owner-id map — the field can hold
+        # either), so a BDR-created deal handed to an AE as owner still counts; else fall back to owner
+        cb = str(p.get("hs_created_by_user_id") or "")
+        rep = users.get(cb) or name_by_owner.get(cb) or name_by_owner.get(str(p.get("hubspot_owner_id") or ""))
         if rep not in REP_NAMES:
             continue
         date, tm = local_date_time(p.get("createdate"))
