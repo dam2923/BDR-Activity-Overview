@@ -1540,7 +1540,7 @@ const BINGO_SQUARES = [
   {n:9,  color:"white", kind:"auto",   label:"Have a longer-than-5-min call with a <b>Managing Director</b>", test:w => w.calls.some(c => c.md && (c.dur || 0) > 300)},
   {n:10, color:"white", kind:"manual", label:"Book a meeting from <b>LinkedIn</b> outreach"},
   // Row 3
-  {n:11, color:"red",   kind:"manual", label:"Book <b>2 Society</b> meetings"},
+  {n:11, color:"red",   kind:"auto",   label:"Book <b>2 Society</b> meetings", test:w => w.deals.filter(d => d.society).length >= 2},
   {n:12, color:"white", kind:"auto",   label:"Add <b>10 qualified contacts</b> to HubSpot",                                      test:w => w.icp.length >= 10},
   {n:13, color:"white", kind:"manual", value:"Kato Value", label:"Share <b>2 examples</b> of how our team could <b>improve</b> with Max"},
   {n:14, color:"red",   kind:"auto",   label:"Book <b>3 Atlas meetings</b> in one week",                                        test:w => w.meetings.filter(m => m.atlas).length >= 3},
