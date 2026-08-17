@@ -60,6 +60,7 @@ PRO_DEALTYPES = {"newbusiness", "renewal", "expansion", "existingbusiness"}  # t
 ATLAS_DEALTYPES = {"Atlas"}         # dealtype value whose label is "Atlas Only"
 PREV_CUSTOMER_STATUS = "Previous Customer"   # company_status value for the "previous customer" square
 MD_TITLE = "managing director"      # case-insensitive substring match on contact jobtitle for the MD-call square
+SOCIETY_PIPELINE = "920765842"      # deal pipeline id "Society Memberships" = the "2 Society meetings" square
 # Known dealstage id → label (both live pipelines), merged UNDER the live property options as a
 # fallback so the SQL/SQO squares resolve even if the properties API is unavailable at runtime.
 STAGE_FALLBACK = {
@@ -268,7 +269,7 @@ def main():
     deal_by_id = {}   # deal_id -> deal dict, for the previous-customer company enrichment
     for r in search_time_chunked("deals", "createdate", [],
                                  ["createdate", "hubspot_owner_id", "hs_created_by_user_id",
-                                  "amount", "amount_in_home_currency", "dealstage", "dealtype"],
+                                  "amount", "amount_in_home_currency", "dealstage", "dealtype", "pipeline"],
                                  start, now):
         p = r.get("properties", {})
         rep = users.get(str(p.get("hs_created_by_user_id") or "")) or name_by_owner.get(str(p.get("hubspot_owner_id") or ""))
@@ -284,7 +285,8 @@ def main():
             amt = 0.0
         d = {"created_date": date, "time": tm, "rep": rep, "amount": amt,
              "stage": stage_labels.get(p.get("dealstage"), p.get("dealstage") or ""),
-             "type": type_labels.get(p.get("dealtype"), p.get("dealtype") or "")}
+             "type": type_labels.get(p.get("dealtype"), p.get("dealtype") or ""),
+             "society": p.get("pipeline") == SOCIETY_PIPELINE}
         deals.append(d)
         deal_by_id[str(r["id"])] = d
     print(f"  deals: {len(deals)}", flush=True)
