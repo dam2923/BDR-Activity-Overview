@@ -61,7 +61,10 @@ PRO_DEALTYPES = {"newbusiness", "renewal", "expansion", "existingbusiness"}  # t
 ATLAS_DEALTYPES = {"Atlas"}         # dealtype value whose label is "Atlas Only"
 PREV_CUSTOMER_STATUS = "Previous Customer"   # company_status value for the "previous customer" square
 MD_TITLE = "managing director"      # case-insensitive substring match on contact jobtitle for the MD-call square
-SOCIETY_PIPELINE = "920765842"      # deal pipeline id "Society Memberships" = the "2 Society meetings" square
+SOCIETY_PIPELINE = "920765842"      # deal pipeline id "Society Memberships" = the "Society meeting" square
+MQL_STAGE_LABEL = "marketing qualified lead"   # LEAD hs_pipeline_stage label for the "0 uncontacted MQLs" square
+UPDATE_PLATFORM_PROPS = ["platform_subscriptions", "platformdata_renewal_date"]  # #10 "Platforms They Use / Renewal Date"
+UPDATE_CRM_PROPS = ["crms", "crm_renewal_date"]                                  # #17 "Current or Past CRMs / Renewal Date"
 # Known dealstage id → label (both live pipelines), merged UNDER the live property options as a
 # fallback so the SQL/SQO squares resolve even if the properties API is unavailable at runtime.
 STAGE_FALLBACK = {
@@ -209,6 +212,17 @@ def batch_read(object_type, ids, properties):
     return result
 
 
+def batch_read_history(object_type, ids, properties):
+    """v3 batch read with per-property change history: {id: {prop: [{value, timestamp, sourceId}]}}."""
+    result = {}
+    for batch in chunked(list(ids), 50):
+        data = http_post(f"{BASE}/crm/v3/objects/{object_type}/batch/read",
+                         {"inputs": [{"id": i} for i in batch], "propertiesWithHistory": properties})
+        for row in data.get("results", []):
+            result[str(row.get("id"))] = row.get("propertiesWithHistory", {})
+    return result
+
+
 def main():
     now = datetime.now(timezone.utc)
     # align window start to the Monday WEEKS weeks ago (local)
@@ -235,6 +249,7 @@ def main():
     # ── Calls (weekday, with time-of-day) ──
     calls = []
     long_calls = {}   # call_id -> call dict, only for >5min calls (candidates for the MD-call square)
+    call_by_id = {}   # call_id -> call dict, all calls (for the Lighthouse-calls square)
     for r in search_time_chunked("calls", "hs_timestamp", [owner_in],
                                  ["hs_timestamp", "hubspot_owner_id", "hs_call_duration", "hs_call_disposition"],
                                  start, now):
@@ -249,8 +264,20 @@ def main():
         c = {"date": date, "time": tm, "rep": rep, "dur": dur_ms // 1000,
              "disp": (p.get("hs_call_disposition") or "").strip()}
         calls.append(c)
+        call_by_id[str(r["id"])] = c
         if c["dur"] > 300:                      # only >5min calls can satisfy the Managing-Director square
             long_calls[str(r["id"])] = c
+
+    # #2: mark calls associated with a Lighthouse company (companies→calls, cheaper than all-calls→companies)
+    try:
+        lh_cos = [str(x["id"]) for x in search("companies",
+                  [{"propertyName": "atlas_priority", "operator": "EQ", "value": "Lighthouse"}], ["atlas_priority"])]
+        for cids in assoc_batch("companies", "calls", lh_cos).values():
+            for cid in cids:
+                if cid in call_by_id:
+                    call_by_id[cid]["lh"] = True
+    except Exception as e:  # noqa: BLE001 — needs companies read
+        print(f"  ⚠ lighthouse-calls enrichment failed ({e}); #2 defaults to 0", file=sys.stderr)
     print(f"  calls: {len(calls)}  (>5min: {len(long_calls)})", flush=True)
 
     # md flag: a >5min call associated with a contact whose Job Title contains "Managing Director"
@@ -407,6 +434,47 @@ def main():
         print(f"  ⚠ new-accounts fetch failed ({e})", file=sys.stderr)
     print(f"  new_accounts: {len(new_accounts)}", flush=True)
 
+    # ── #8: LEADs currently in the "Marketing Qualified Lead" stage, per BDR (snapshot; 0 -> square ticks) ──
+    uncontacted_mqls = {n: 0 for n in REP_NAMES}
+    try:
+        stage_map = property_options("leads", "hs_pipeline_stage")   # id -> label
+        mql_ids = [sid for sid, lab in stage_map.items() if MQL_STAGE_LABEL in (lab or "").lower()]
+        if not mql_ids:
+            raise ValueError("no 'Marketing Qualified Lead' lead stage found")
+        for r in search("leads", [owner_in, {"propertyName": "hs_pipeline_stage", "operator": "IN", "values": mql_ids}],
+                        ["hubspot_owner_id", "hs_pipeline_stage"]):
+            rep = rep_by_owner.get(str(r.get("properties", {}).get("hubspot_owner_id")))
+            if rep in uncontacted_mqls:
+                uncontacted_mqls[rep] += 1
+    except Exception as e:  # noqa: BLE001 — needs crm.objects.leads.read; unknown -> {} so #8 stays blank (not 0=tick)
+        print(f"  ⚠ MQL-leads fetch failed ({e}); #8 left blank", file=sys.stderr)
+        uncontacted_mqls = {}
+    print(f"  uncontacted_mqls: {uncontacted_mqls}", flush=True)
+
+    # ── #10/#17: a BDR updated Platforms/CRMs/renewal-date on a company they OWN this week (change history) ──
+    updates = {}
+    try:
+        now_local = now.astimezone(TZ)
+        cur_monday = (now_local - timedelta(days=now_local.weekday())).strftime("%Y-%m-%d")
+        mod_gte = {"propertyName": "hs_lastmodifieddate", "operator": "GTE", "value": iso_ms(now - timedelta(days=7))}
+        owned = [str(r["id"]) for r in search("companies", [owner_in, mod_gte], ["hubspot_owner_id"])]
+        for props in batch_read_history("companies", owned, UPDATE_PLATFORM_PROPS + UPDATE_CRM_PROPS).values():
+            for prop, entries in props.items():
+                for ent in entries:
+                    edate, _ = local_date_time(ent.get("timestamp"))
+                    if not edate or edate < cur_monday:
+                        continue
+                    rep = users.get(str(ent.get("sourceId") or "")) or name_by_owner.get(str(ent.get("sourceId") or ""))
+                    if rep in REP_NAMES:
+                        u = updates.setdefault(rep, {"platforms": False, "crms": False})
+                        if prop in UPDATE_PLATFORM_PROPS:
+                            u["platforms"] = True
+                        if prop in UPDATE_CRM_PROPS:
+                            u["crms"] = True
+    except Exception as e:  # noqa: BLE001 — needs companies read + property history
+        print(f"  ⚠ property-update history failed ({e}); #10/#17 default to False", file=sys.stderr)
+    print(f"  updates: {updates}", flush=True)
+
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "timezone": str(TZ),
@@ -414,6 +482,7 @@ def main():
         "reps": REP_NAMES,
         "calls": calls, "meetings": meetings, "deals": deals,
         "contacts_created": contacts_created, "new_accounts": new_accounts,
+        "uncontacted_mqls": uncontacted_mqls, "updates": updates,
     }
     out_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "bingo.json"))
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
