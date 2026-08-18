@@ -437,11 +437,16 @@ def main():
     # ── #8: LEADs currently in the "Marketing Qualified Lead" stage, per BDR (snapshot; 0 -> square ticks) ──
     uncontacted_mqls = {n: 0 for n in REP_NAMES}
     try:
-        stage_map = property_options("leads", "hs_pipeline_stage")   # id -> label
+        obj = "leads"
+        try:
+            stage_map = property_options(obj, "hs_pipeline_stage")   # id -> label
+        except Exception:                        # HubSpot may expect the objectTypeId for the Leads object
+            obj = "0-136"
+            stage_map = property_options(obj, "hs_pipeline_stage")
         mql_ids = [sid for sid, lab in stage_map.items() if MQL_STAGE_LABEL in (lab or "").lower()]
         if not mql_ids:
-            raise ValueError("no 'Marketing Qualified Lead' lead stage found")
-        for r in search("leads", [owner_in, {"propertyName": "hs_pipeline_stage", "operator": "IN", "values": mql_ids}],
+            raise ValueError(f"no 'Marketing Qualified Lead' stage; lead stages = {sorted(stage_map.values())}")
+        for r in search(obj, [owner_in, {"propertyName": "hs_pipeline_stage", "operator": "IN", "values": mql_ids}],
                         ["hubspot_owner_id", "hs_pipeline_stage"]):
             rep = rep_by_owner.get(str(r.get("properties", {}).get("hubspot_owner_id")))
             if rep in uncontacted_mqls:
