@@ -62,7 +62,7 @@ ATLAS_DEALTYPES = {"Atlas"}         # dealtype value whose label is "Atlas Only"
 PREV_CUSTOMER_STATUS = "Previous Customer"   # company_status value for the "previous customer" square
 MD_TITLE = "managing director"      # case-insensitive substring match on contact jobtitle for the MD-call square
 SOCIETY_PIPELINE = "920765842"      # deal pipeline id "Society Memberships" = the "Society meeting" square
-MQL_STAGE_LABEL = "marketing qualified lead"   # LEAD hs_pipeline_stage label for the "0 uncontacted MQLs" square
+MQL_STAGE_ID = "attempting-stage-id"   # LEAD hs_pipeline_stage id for "MQL - Marketing Qualified Lead" (per Ross)
 UPDATE_PLATFORM_PROPS = ["platform_subscriptions", "platformdata_renewal_date"]  # #10 "Platforms They Use / Renewal Date"
 UPDATE_CRM_PROPS = ["crms", "crm_renewal_date"]                                  # #17 "Current or Past CRMs / Renewal Date"
 # Known dealstage id → label (both live pipelines), merged UNDER the live property options as a
@@ -138,6 +138,15 @@ def property_options(object_type, prop):
     """value -> label map for an enumeration property."""
     data = http_get(f"{BASE}/crm/v3/properties/{object_type}/{prop}")
     return {o["value"]: o["label"] for o in data.get("options", [])}
+
+
+def pipeline_stages(object_type):
+    """stage id -> label across every pipeline of an object type (leads/deals stages live in pipelines)."""
+    out = {}
+    for pl in http_get(f"{BASE}/crm/v3/pipelines/{object_type}").get("results", []):
+        for st in pl.get("stages", []):
+            out[str(st.get("id"))] = st.get("label")
+    return out
 
 
 def local_date_time(ts):
@@ -436,18 +445,13 @@ def main():
 
     # ── #8: LEADs currently in the "Marketing Qualified Lead" stage, per BDR (snapshot; 0 -> square ticks) ──
     uncontacted_mqls = {n: 0 for n in REP_NAMES}
+    stage_filter = {"propertyName": "hs_pipeline_stage", "operator": "IN", "values": [MQL_STAGE_ID]}
     try:
-        obj = "leads"
         try:
-            stage_map = property_options(obj, "hs_pipeline_stage")   # id -> label
+            rows = search("leads", [owner_in, stage_filter], ["hubspot_owner_id", "hs_pipeline_stage"])
         except Exception:                        # HubSpot may expect the objectTypeId for the Leads object
-            obj = "0-136"
-            stage_map = property_options(obj, "hs_pipeline_stage")
-        mql_ids = [sid for sid, lab in stage_map.items() if MQL_STAGE_LABEL in (lab or "").lower()]
-        if not mql_ids:
-            raise ValueError(f"no 'Marketing Qualified Lead' stage; lead stages = {sorted(stage_map.values())}")
-        for r in search(obj, [owner_in, {"propertyName": "hs_pipeline_stage", "operator": "IN", "values": mql_ids}],
-                        ["hubspot_owner_id", "hs_pipeline_stage"]):
+            rows = search("0-136", [owner_in, stage_filter], ["hubspot_owner_id", "hs_pipeline_stage"])
+        for r in rows:
             rep = rep_by_owner.get(str(r.get("properties", {}).get("hubspot_owner_id")))
             if rep in uncontacted_mqls:
                 uncontacted_mqls[rep] += 1
