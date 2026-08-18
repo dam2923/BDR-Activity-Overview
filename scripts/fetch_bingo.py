@@ -60,7 +60,6 @@ NEW_LOGO_DEALTYPE = "newbusiness"   # dealtype value whose label is "New Logo Pr
 PRO_DEALTYPES = {"newbusiness", "renewal", "expansion", "existingbusiness"}  # the "Kato Pro" product family
 ATLAS_DEALTYPES = {"Atlas"}         # dealtype value whose label is "Atlas Only"
 PREV_CUSTOMER_STATUS = "Previous Customer"   # company_status value for the "previous customer" square
-MD_TITLE = "managing director"      # case-insensitive substring match on contact jobtitle for the MD-call square
 SOCIETY_PIPELINE = "920765842"      # deal pipeline id "Society Memberships" = the "Society meeting" square
 MQL_STAGE_ID = "attempting-stage-id"   # LEAD hs_pipeline_stage id for "MQL - Marketing Qualified Lead" (per Ross)
 UPDATE_PLATFORM_PROPS = ["platform_subscriptions", "platformdata_renewal_date"]  # #10 "Platforms They Use / Renewal Date"
@@ -256,9 +255,14 @@ def main():
     owner_in = {"propertyName": "hubspot_owner_id", "operator": "IN", "values": owner_ids}
 
     # ── Calls (weekday, with time-of-day) ──
+    try:                                          # "Connected" disposition id, for #9 (contacts-at-a-company)
+        _disp = property_options("calls", "hs_call_disposition")
+        connected_id = next((k for k, v in _disp.items() if (v or "").strip().lower() == "connected"), None)
+    except Exception:
+        connected_id = None
     calls = []
-    long_calls = {}   # call_id -> call dict, only for >5min calls (candidates for the MD-call square)
-    call_by_id = {}   # call_id -> call dict, all calls (for the Lighthouse-calls square)
+    connected_calls = {}   # call_id -> call dict, connected calls only (for #9 contacts-at-a-company)
+    call_by_id = {}        # call_id -> call dict, all calls (for the Lighthouse-calls square)
     for r in search_time_chunked("calls", "hs_timestamp", [owner_in],
                                  ["hs_timestamp", "hubspot_owner_id", "hs_call_duration", "hs_call_disposition"],
                                  start, now):
@@ -274,8 +278,8 @@ def main():
              "disp": (p.get("hs_call_disposition") or "").strip()}
         calls.append(c)
         call_by_id[str(r["id"])] = c
-        if c["dur"] > 300:                      # only >5min calls can satisfy the Managing-Director square
-            long_calls[str(r["id"])] = c
+        if connected_id and c["disp"] == connected_id:   # #9 counts contacts reached on connected calls
+            connected_calls[str(r["id"])] = c
 
     # #2: mark calls associated with a Lighthouse company (companies→calls, cheaper than all-calls→companies)
     try:
@@ -287,19 +291,23 @@ def main():
                     call_by_id[cid]["lh"] = True
     except Exception as e:  # noqa: BLE001 — needs companies read
         print(f"  ⚠ lighthouse-calls enrichment failed ({e}); #2 defaults to 0", file=sys.stderr)
-    print(f"  calls: {len(calls)}  (>5min: {len(long_calls)})", flush=True)
+    print(f"  calls: {len(calls)}  (connected: {len(connected_calls)})", flush=True)
 
-    # md flag: a >5min call associated with a contact whose Job Title contains "Managing Director"
-    if long_calls:
+    # #9 "3+ contacts at a company": tag connected calls with their company + contact (grouped client-side)
+    if connected_calls:
         try:
-            c2c = assoc_batch("calls", "contacts", list(long_calls.keys()))
-            titles = batch_read("contacts", {cid for cids in c2c.values() for cid in cids}, ["jobtitle"])
-            for call_id, cdict in long_calls.items():
-                if any(MD_TITLE in (titles.get(cid, {}).get("jobtitle") or "").lower()
-                       for cid in c2c.get(call_id, [])):
-                    cdict["md"] = True
+            call_ids = list(connected_calls.keys())
+            c2c = assoc_batch("calls", "contacts", call_ids)
+            c2co = assoc_batch("calls", "companies", call_ids)
+            for call_id, cdict in connected_calls.items():
+                cts = c2c.get(call_id, [])
+                cos = c2co.get(call_id, [])
+                if cts:
+                    cdict["ct"] = cts[0]
+                if cos:
+                    cdict["co"] = cos[0]
         except Exception as e:  # noqa: BLE001 — best-effort
-            print(f"  ⚠ call MD-title enrichment failed ({e}); md defaults to False", file=sys.stderr)
+            print(f"  ⚠ connected-call company/contact enrichment failed ({e}); #9 defaults off", file=sys.stderr)
 
     # ── Deals (amount / stage / type), attributed to creator then owner ──
     deals = []
