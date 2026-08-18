@@ -62,6 +62,10 @@ ATLAS_DEALTYPES = {"Atlas"}         # dealtype value whose label is "Atlas Only"
 PREV_CUSTOMER_STATUS = "Previous Customer"   # company_status value for the "previous customer" square
 SOCIETY_PIPELINE = "920765842"      # deal pipeline id "Society Memberships" = the "Society meeting" square
 MQL_STAGE_ID = "attempting-stage-id"   # LEAD hs_pipeline_stage id for "MQL - Marketing Qualified Lead" (per Ross)
+CONNECTED_DISPOSITION = "f240bbac-87c9-4f6e-bf70-924b57d47db7"  # hs_call_disposition id for "Connected" (#9 contacts-at-a-company)
+# #9 only ever scores weeks the quarter table shows, i.e. from launch. Keep in sync with index.html BINGO_TRACKING_START.
+# Associating only connected calls on/after this cuts the pull from ~all-connected to just the tracked weeks.
+TRACKING_START = os.environ.get("BINGO_TRACKING_START", "2026-08-10")
 UPDATE_PLATFORM_PROPS = ["platform_subscriptions", "platformdata_renewal_date"]  # #10 "Platforms They Use / Renewal Date"
 UPDATE_CRM_PROPS = ["crms", "crm_renewal_date"]                                  # #17 "Current or Past CRMs / Renewal Date"
 # Known dealstage id → label (both live pipelines), merged UNDER the live property options as a
@@ -198,14 +202,17 @@ def search_time_chunked(object_type, date_prop, extra_filters, properties, start
 
 
 def assoc_batch(from_type, to_type, ids):
-    """v4 batch association read: {meetingId: [associatedIds]}."""
+    """v4 batch association read: {fromId: [associatedIds]}. Resilient — a bad chunk is skipped, not fatal."""
     result = {}
     for batch in chunked(ids, 100):
-        data = http_post(f"{BASE}/crm/v4/associations/{from_type}/{to_type}/batch/read",
-                         {"inputs": [{"id": i} for i in batch]})
-        for row in data.get("results", []):
-            fid = str(row.get("from", {}).get("id"))
-            result[fid] = [str(t.get("toObjectId")) for t in row.get("to", [])]
+        try:
+            data = http_post(f"{BASE}/crm/v4/associations/{from_type}/{to_type}/batch/read",
+                             {"inputs": [{"id": i} for i in batch]})
+            for row in data.get("results", []):
+                fid = str(row.get("from", {}).get("id"))
+                result[fid] = [str(t.get("toObjectId")) for t in row.get("to", [])]
+        except Exception as e:  # noqa: BLE001 — don't let one chunk zero the whole association
+            print(f"  ⚠ assoc {from_type}->{to_type} chunk failed ({e}); skipped", file=sys.stderr)
     return result
 
 
@@ -255,11 +262,7 @@ def main():
     owner_in = {"propertyName": "hubspot_owner_id", "operator": "IN", "values": owner_ids}
 
     # ── Calls (weekday, with time-of-day) ──
-    try:                                          # "Connected" disposition id, for #9 (contacts-at-a-company)
-        _disp = property_options("calls", "hs_call_disposition")
-        connected_id = next((k for k, v in _disp.items() if (v or "").strip().lower() == "connected"), None)
-    except Exception:
-        connected_id = None
+    connected_id = CONNECTED_DISPOSITION          # HubSpot standard "Connected" call outcome (confirmed in data)
     calls = []
     connected_calls = {}   # call_id -> call dict, connected calls only (for #9 contacts-at-a-company)
     call_by_id = {}        # call_id -> call dict, all calls (for the Lighthouse-calls square)
@@ -278,8 +281,8 @@ def main():
              "disp": (p.get("hs_call_disposition") or "").strip()}
         calls.append(c)
         call_by_id[str(r["id"])] = c
-        if connected_id and c["disp"] == connected_id:   # #9 counts contacts reached on connected calls
-            connected_calls[str(r["id"])] = c
+        if connected_id and c["disp"] == connected_id and c["date"] >= TRACKING_START:
+            connected_calls[str(r["id"])] = c            # #9: only tracked-week connected calls need company/contact assoc
 
     # #2: mark calls associated with a Lighthouse company (companies→calls, cheaper than all-calls→companies)
     try:
@@ -291,7 +294,7 @@ def main():
                     call_by_id[cid]["lh"] = True
     except Exception as e:  # noqa: BLE001 — needs companies read
         print(f"  ⚠ lighthouse-calls enrichment failed ({e}); #2 defaults to 0", file=sys.stderr)
-    print(f"  calls: {len(calls)}  (connected: {len(connected_calls)})", flush=True)
+    print(f"  calls: {len(calls)}  (connected since {TRACKING_START}, to associate: {len(connected_calls)})", flush=True)
 
     # #9 "3+ contacts at a company": tag connected calls with their company + contact (grouped client-side)
     if connected_calls:
