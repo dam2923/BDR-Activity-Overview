@@ -289,17 +289,26 @@ def main():
         print(f"  ⚠ lighthouse-calls enrichment failed ({e}); #2 defaults to 0", file=sys.stderr)
     print(f"  calls: {len(calls)}  (>5min: {len(long_calls)})", flush=True)
 
-    # md flag: a >5min call associated with a contact whose Job Title contains "Managing Director"
+    # Enrich only the >5min calls (small set) with their contact + company:
+    #   md flag (#9's sibling): associated contact's Job Title contains "Managing Director"
+    #   co/ct (#9 "3+ contacts at a company"): the call's company + contact, grouped client-side
     if long_calls:
         try:
-            c2c = assoc_batch("calls", "contacts", list(long_calls.keys()))
+            call_ids = list(long_calls.keys())
+            c2c = assoc_batch("calls", "contacts", call_ids)
+            c2co = assoc_batch("calls", "companies", call_ids)
             titles = batch_read("contacts", {cid for cids in c2c.values() for cid in cids}, ["jobtitle"])
             for call_id, cdict in long_calls.items():
-                if any(MD_TITLE in (titles.get(cid, {}).get("jobtitle") or "").lower()
-                       for cid in c2c.get(call_id, [])):
+                contacts = c2c.get(call_id, [])
+                if any(MD_TITLE in (titles.get(cid, {}).get("jobtitle") or "").lower() for cid in contacts):
                     cdict["md"] = True
+                if contacts:
+                    cdict["ct"] = contacts[0]
+                cos = c2co.get(call_id, [])
+                if cos:
+                    cdict["co"] = cos[0]
         except Exception as e:  # noqa: BLE001 — best-effort
-            print(f"  ⚠ call MD-title enrichment failed ({e}); md defaults to False", file=sys.stderr)
+            print(f"  ⚠ call contact/company enrichment failed ({e}); md & #9 default off", file=sys.stderr)
 
     # ── Deals (amount / stage / type), attributed to creator then owner ──
     deals = []
