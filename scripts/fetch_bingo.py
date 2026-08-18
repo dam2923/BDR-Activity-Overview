@@ -11,9 +11,10 @@ risk. Shape consumed by the Bingo tab in index.html:
   "daily_call_target": 40,
   "reps": ["Tyreek Burke", ...],                       # BDRs who get a card
   "calls":    [{"date","time","rep","dur","disp","md?"}],  # md = >5min call associated w/ a Managing Director
-  "meetings": [{"booked_date","booked_time","time","meeting_date","rep","lighthouse","net_new","pro","atlas","prev_customer","outcome"}],
-  "deals":    [{"created_date","time","rep","amount","stage","type","prev_customer?"}],
-  "icp_contacts": [{"created_date","rep"}]              # ICP-fit prospects created by a rep
+  "meetings": [{"booked_date","booked_time","time","meeting_date","rep","lighthouse","net_new","pro","atlas","prev_customer","lh_customer","lh_prospect","outcome"}],
+  "deals":    [{"created_date","time","rep","amount","stage","type","society","prev_customer?"}],
+  "contacts_created": [{"created_date","rep"}],         # contacts created in window by Contact Owner
+  "new_accounts":     [{"created_date","rep"}]          # companies created in window by Company Owner
 }
 
 `lighthouse`  = the meeting involves a company with atlas_priority == "Lighthouse"
@@ -330,6 +331,8 @@ def main():
     deal_flags = {}   # mid -> (net_new, pro, atlas)
     comp_flags = {}   # mid -> lighthouse
     prev_flags = {}   # mid -> previous-customer
+    lhcust_flags = {} # mid -> lighthouse company that is a Customer
+    lhpros_flags = {} # mid -> lighthouse company that is a Prospect
 
     try:
         m2d = assoc_batch("meetings", "deals", ids)
@@ -345,8 +348,11 @@ def main():
         comp_props = batch_read("companies", {c for cs in m2c.values() for c in cs}, ["atlas_priority", "company_status"])
         for mid in ids:
             cos = [comp_props.get(c, {}) for c in m2c.get(mid, [])]
-            comp_flags[mid] = any(x.get("atlas_priority") == "Lighthouse" for x in cos)
+            lh = [x for x in cos if x.get("atlas_priority") == "Lighthouse"]
+            comp_flags[mid] = bool(lh)
             prev_flags[mid] = any(x.get("company_status") == PREV_CUSTOMER_STATUS for x in cos)
+            lhcust_flags[mid] = any(x.get("company_status") == "Customer" for x in lh)
+            lhpros_flags[mid] = any(x.get("company_status") == "Prospect" for x in lh)
     except Exception as e:  # noqa: BLE001 — needs crm.objects.companies.read
         print(f"  ⚠ meeting company-enrichment failed ({e}); lighthouse/prev_customer default to False", file=sys.stderr)
 
@@ -366,43 +372,55 @@ def main():
                          "lighthouse": comp_flags.get(str(r["id"]), False),
                          "net_new": net_new, "pro": pro, "atlas": atlas,
                          "prev_customer": prev_flags.get(str(r["id"]), False),
+                         "lh_customer": lhcust_flags.get(str(r["id"]), False),
+                         "lh_prospect": lhpros_flags.get(str(r["id"]), False),
                          "outcome": (p.get("hs_meeting_outcome") or "").strip()})
     print(f"  meetings: {len(meetings)}", flush=True)
 
-    # ── ICP prospects: contacts created in window by a rep, whose company is ICP-fit ──
-    icp = []
+    # ── Contacts created in window, by Contact Owner — plain count for "Add 10 contacts" ──
+    # (Attribution is by OWNER, not creator: the team uses an integration to create contacts, so
+    # created-by is unreliable; the BDR is the Contact Owner.)
+    contacts_created = []
     try:
-        contact_rows = search_time_chunked("contacts", "createdate", [owner_in],
-                                            ["createdate", "hubspot_owner_id"], start, now)
-        cids = [str(r["id"]) for r in contact_rows]
-        c2c = assoc_batch("contacts", "companies", cids)
-        icp_props = batch_read("companies", {c for cs in c2c.values() for c in cs}, ["sc_icp_fit"])
-        for r in contact_rows:
-            rep = rep_by_owner.get(str(r.get("properties", {}).get("hubspot_owner_id")))
-            date, _ = local_date_time(r.get("properties", {}).get("createdate"))
-            if not rep or not date:
-                continue
-            is_icp = any(str(icp_props.get(c, {}).get("sc_icp_fit") or "").strip() not in ("", "false", "No", "no")
-                         for c in c2c.get(str(r["id"]), []))
-            if is_icp:
-                icp.append({"created_date": date, "rep": rep})
+        for r in search_time_chunked("contacts", "createdate", [owner_in],
+                                     ["createdate", "hubspot_owner_id"], start, now):
+            p = r.get("properties", {})
+            rep = rep_by_owner.get(str(p.get("hubspot_owner_id")))
+            date, _ = local_date_time(p.get("createdate"))
+            if rep and date:
+                contacts_created.append({"created_date": date, "rep": rep})
     except Exception as e:  # noqa: BLE001
-        print(f"  ⚠ ICP contact fetch failed ({e}); skipping ICP square", file=sys.stderr)
-    print(f"  icp_contacts: {len(icp)}", flush=True)
+        print(f"  ⚠ contact fetch failed ({e})", file=sys.stderr)
+    print(f"  contacts_created: {len(contacts_created)}", flush=True)
+
+    # ── New prospect accounts: companies created in window, by Company Owner ──
+    new_accounts = []
+    try:
+        for r in search_time_chunked("companies", "createdate", [owner_in],
+                                     ["createdate", "hubspot_owner_id"], start, now):
+            p = r.get("properties", {})
+            rep = rep_by_owner.get(str(p.get("hubspot_owner_id")))
+            date, _ = local_date_time(p.get("createdate"))
+            if rep and date:
+                new_accounts.append({"created_date": date, "rep": rep})
+    except Exception as e:  # noqa: BLE001
+        print(f"  ⚠ new-accounts fetch failed ({e})", file=sys.stderr)
+    print(f"  new_accounts: {len(new_accounts)}", flush=True)
 
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "timezone": str(TZ),
         "daily_call_target": DAILY_CALL_TARGET,
         "reps": REP_NAMES,
-        "calls": calls, "meetings": meetings, "deals": deals, "icp_contacts": icp,
+        "calls": calls, "meetings": meetings, "deals": deals,
+        "contacts_created": contacts_created, "new_accounts": new_accounts,
     }
     out_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "bingo.json"))
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with open(out_path, "w") as f:
         json.dump(payload, f)
     print(f"\nWrote {out_path}: {len(calls)} calls, {len(meetings)} meetings, "
-          f"{len(deals)} deals, {len(icp)} ICP contacts")
+          f"{len(deals)} deals, {len(contacts_created)} contacts, {len(new_accounts)} new accounts")
 
 
 if __name__ == "__main__":

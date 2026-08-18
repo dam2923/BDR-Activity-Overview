@@ -1510,12 +1510,19 @@ function countOn(list, date){ return list.filter(x => x.date === date).length; }
 // Per-date cutoff override for the "calls before 9am" square (minutes from midnight).
 // Default 09:00; list a date to relax/tighten it that day only — self-reverts for dates not listed.
 const BINGO_BEFORE9_OVERRIDES = { "2026-08-10": 10 * 60 };   // Mon 10 Aug 2026: before 10am; back to 9am from 11 Aug
-// every weekday present in `days` has >= 2 calls before its cutoff (default 9am)
-function everyWeekdayBefore9(calls, days){
-  return days.every(d => {
+// count of weekdays with >= 1 call before the (override-aware) 9am cutoff
+function daysBefore9(calls, days){
+  return days.filter(d => {
     const cut = BINGO_BEFORE9_OVERRIDES[d] || BINGO_CFG.before9;
-    return calls.filter(c => c.date === d && hmin(c.time) < cut).length >= 2;
-  });
+    return calls.some(c => c.date === d && hmin(c.time) < cut);
+  }).length;
+}
+// max distinct contacts called at any single company this week (calls carry co=company id, ct=contact id)
+function maxContactsAtCompany(calls){
+  const byCo = {};
+  calls.forEach(c => { if(c.co && c.ct){ (byCo[c.co] = byCo[c.co] || new Set()).add(c.ct); } });
+  let mx = 0; Object.values(byCo).forEach(s => { if(s.size > mx) mx = s.size; });
+  return mx;
 }
 // meeting booked before Wednesday 18:00 (uses booked_time; falls back to date-only when absent)
 function bookedBeforeWeds6pm(m, days){
@@ -1525,38 +1532,38 @@ function bookedBeforeWeds6pm(m, days){
   return false;
 }
 
-// 25 squares in card (row-major) order. kind: auto | manual. color:"red" = pink "red square".
+// 25 squares in card (row-major) order — all auto (HubSpot-fed). color:"red" = pink "red square".
 const BINGO_SQUARES = [
   // Row 1 (B · I · N · G · O)
-  {n:1,  color:"white", kind:"auto",   label:"Make <b>2 calls before 9am</b> everyday",                                          test:w => everyWeekdayBefore9(w.calls, w.days)},
-  {n:2,  color:"white", kind:"manual", label:"Send Max <b>3 calls</b> showing <b>objection handling</b>"},
-  {n:3,  color:"red",   kind:"auto",   label:"Book <b>2 Kato Pro</b> meetings before <b>Weds 6pm</b>",                            test:w => w.meetings.filter(m => m.pro && bookedBeforeWeds6pm(m, w.days)).length >= 2},
-  {n:4,  color:"white", kind:"auto",   label:"Handle a <b>call</b> lasting more than <b>10 minutes</b>",                         test:w => w.calls.some(c => (c.dur || 0) > 600)},
-  {n:5,  color:"red",   kind:"auto",   label:() => `Hit <b>110% of daily call target</b> (${Math.ceil(BINGO_CFG.target * 11 / 10)} calls) on a day`, test:w => anyDay(w.calls, Math.ceil(BINGO_CFG.target * 11 / 10))},
+  {n:1,  color:"white", label:"Make <b>1 call before 9am</b> on <b>4 days</b>",                        test:w => daysBefore9(w.calls, w.days) >= 4},
+  {n:2,  color:"white", label:"Make <b>10 calls</b> to <b>Lighthouse Companies</b>",                   test:w => w.calls.filter(c => c.lh).length >= 10},
+  {n:3,  color:"red",   label:"Book <b>1 Kato Pro</b> meeting",                                        test:w => w.meetings.some(m => m.pro)},
+  {n:4,  color:"white", label:"Handle a <b>call</b> lasting more than <b>10 minutes</b>",              test:w => w.calls.some(c => (c.dur || 0) > 600)},
+  {n:5,  color:"red",   label:() => `Hit <b>110% of daily call target</b> (${Math.ceil(BINGO_CFG.target * 11 / 10)} calls) on a day`, test:w => anyDay(w.calls, Math.ceil(BINGO_CFG.target * 11 / 10))},
   // Row 2
-  {n:6,  color:"white", kind:"auto",   label:"Book <b>2 meetings</b> scheduled for the <b>current week</b>",                     test:w => w.meetings.filter(m => m.meeting_date && m.meeting_date >= w.monday && m.meeting_date <= w.sunday).length >= 2},
-  {n:7,  color:"red",   kind:"auto",   label:"Complete <b>60 calls</b> on a <b>Friday</b>",                                      test:w => countOn(w.calls, w.friday) >= 60},
-  {n:8,  color:"white", kind:"manual", label:"Get a <b>referral/intro</b> from a prospect"},
-  {n:9,  color:"white", kind:"auto",   label:"Have a longer-than-5-min call with a <b>Managing Director</b>", test:w => w.calls.some(c => c.md && (c.dur || 0) > 300)},
-  {n:10, color:"white", kind:"manual", label:"Book a meeting from <b>LinkedIn</b> outreach"},
+  {n:6,  color:"white", label:"Book <b>1 meeting</b> scheduled for the <b>current week</b>",           test:w => w.meetings.some(m => m.meeting_date && m.meeting_date >= w.monday && m.meeting_date <= w.sunday)},
+  {n:7,  color:"red",   label:"Complete <b>50 calls</b> on a <b>Friday</b>",                           test:w => countOn(w.calls, w.friday) >= 50},
+  {n:8,  color:"white", label:"Have <b>0 Uncontacted Leads (MQLs)</b> remaining by EOW",               test:w => w.isCurrent && w.uncontactedMqls === 0},
+  {n:9,  color:"white", label:"Call more than <b>3 contacts</b> at a company",                         test:w => maxContactsAtCompany(w.calls) > 3},
+  {n:10, color:"white", label:"Make <b>1 Update</b> to <b>Platforms They Use / Renewal Date</b>",      test:w => w.isCurrent && w.updatedPlatforms},
   // Row 3
-  {n:11, color:"red",   kind:"auto",   label:"Book <b>2 Society</b> meetings", test:w => w.deals.filter(d => d.society).length >= 2},
-  {n:12, color:"white", kind:"auto",   label:"Add <b>10 qualified contacts</b> to HubSpot",                                      test:w => w.icp.length >= 10},
-  {n:13, color:"white", kind:"manual", value:"Kato Value", label:"Share <b>2 examples</b> of how our team could <b>improve</b> with Max"},
-  {n:14, color:"red",   kind:"auto",   label:"Book <b>3 Atlas meetings</b> in one week",                                        test:w => w.meetings.filter(m => m.atlas).length >= 3},
-  {n:15, color:"white", kind:"manual", label:"Complete the <b>most calls</b> from the <b>Regional Sprint</b> list"},
+  {n:11, color:"red",   label:"Book <b>1 Society</b> meeting",                                         test:w => w.deals.some(d => d.society)},
+  {n:12, color:"white", label:"Add <b>10 contacts</b> to HubSpot",                                     test:w => w.contacts >= 10},
+  {n:13, color:"white", label:"Handle a <b>call</b> lasting more than <b>5 minutes</b>",               test:w => w.calls.some(c => (c.dur || 0) > 300)},
+  {n:14, color:"red",   label:"Book <b>1 Atlas</b> meeting",                                           test:w => w.meetings.some(m => m.atlas)},
+  {n:15, color:"white", label:"Find and add <b>1 new prospect account</b>",                           test:w => w.newAccounts >= 1},
   // Row 4
-  {n:16, color:"white", kind:"auto",   label:"Book <b>2 Atlas meetings</b> with <b>Lighthouse</b> Customers",                    test:w => w.meetings.filter(m => m.atlas && m.lighthouse).length >= 2},
-  {n:17, color:"white", kind:"manual", label:"Share <b>1 good</b> and <b>1 bad</b> call — feedback to Max"},
-  {n:18, color:"red",   kind:"auto",   label:"Book the <b>first meeting</b> of the week",                                       test:w => w.win.firstMeeting === w.rep},
-  {n:19, color:"white", kind:"auto",   label:"Book <b>1 meeting</b> with a <b>Previous Customer</b>", test:w => w.meetings.some(m => m.prev_customer) || w.deals.some(d => d.prev_customer)},
-  {n:20, color:"red",   kind:"auto",   label:"First to create <b>£25k+ SQL pipe</b>",                                           test:w => w.win.first25k === w.rep},
+  {n:16, color:"white", label:"Book <b>1 meeting</b> with a <b>Lighthouse Customer</b>",               test:w => w.meetings.some(m => m.lh_customer)},
+  {n:17, color:"white", label:"Make <b>1 Update</b> to <b>Current or Past CRMs / Renewal Date</b>",    test:w => w.isCurrent && w.updatedCrms},
+  {n:18, color:"red",   label:"Book the <b>first meeting</b> of the week",                             test:w => w.win.firstMeeting === w.rep},
+  {n:19, color:"white", label:"Book <b>1 meeting</b> with a <b>Previous Customer</b>",                 test:w => w.meetings.some(m => m.prev_customer) || w.deals.some(d => d.prev_customer)},
+  {n:20, color:"red",   label:"First to create <b>£20k+ SQL pipe</b>",                                 test:w => w.win.first20k === w.rep},
   // Row 5
-  {n:21, color:"white", kind:"manual", label:"Send <b>3 calls</b> showing the <b>talk track</b> (Pro or Atlas) with Max"},
-  {n:22, color:"red",   kind:"auto",   label:"Make <b>50 calls before 1pm</b>",                                                 test:w => anyDayFilter(w.calls, c => hmin(c.time) < BINGO_CFG.onepm, 50)},
-  {n:23, color:"white", kind:"manual", label:"Book a meeting with a <b>Senior Stakeholder</b> at a <b>Lighthouse</b> Company"},
-  {n:24, color:"red",   kind:"auto",   label:"Generate <b>3 SQOs</b> in the week",                                              test:w => w.deals.filter(d => BINGO_SQO_STAGES.has(d.stage)).length >= 3},
-  {n:25, color:"white", kind:"auto",   label:"Make the <b>first call</b> on a Monday",                                          test:w => w.win.mondayCall === w.rep},
+  {n:21, color:"white", label:"Make <b>50 calls</b> on <b>Wednesday</b>",                              test:w => countOn(w.calls, w.wednesday) >= 50},
+  {n:22, color:"red",   label:"Make <b>50 calls before 1pm</b>",                                       test:w => anyDayFilter(w.calls, c => hmin(c.time) < BINGO_CFG.onepm, 50)},
+  {n:23, color:"white", label:"Book <b>1 meeting</b> with a <b>Lighthouse Prospect</b>",               test:w => w.meetings.some(m => m.lh_prospect)},
+  {n:24, color:"red",   label:"Generate <b>2 SQOs</b> in the week",                                    test:w => w.deals.filter(d => BINGO_SQO_STAGES.has(d.stage)).length >= 2},
+  {n:25, color:"white", label:"Make the <b>first call</b> on a Monday",                                test:w => w.win.mondayCall === w.rep},
 ];
 
 const BINGO_LINES = (() => {
@@ -1579,7 +1586,7 @@ function bingoWeeksList(){
     (BINGO.calls || []).forEach(c => add(c.date));
     (BINGO.meetings || []).forEach(m => add(m.booked_date));
     (BINGO.deals || []).forEach(d => add(d.created_date));
-    (BINGO.icp_contacts || []).forEach(c => add(c.created_date));
+    (BINGO.contacts_created || []).forEach(c => add(c.created_date));
   }
   set.add(iso(mondayOf(new Date())));   // always include the current week so the board resets Mon 00:00
   return [...set].sort().reverse();
@@ -1599,20 +1606,28 @@ function buildBingoWeek(mondayIso){
   const calls = (BINGO.calls || []).filter(c => inWk(c.date));
   const meetings = (BINGO.meetings || []).filter(m => inWk(m.booked_date));
   const deals = (BINGO.deals || []).filter(d => inWk(d.created_date));
-  const icp = (BINGO.icp_contacts || []).filter(c => inWk(c.created_date));
+  const contacts = (BINGO.contacts_created || []).filter(c => inWk(c.created_date));
+  const accounts = (BINGO.new_accounts || []).filter(a => inWk(a.created_date));
   const monday = days[0];
+  const isCurrent = mondayIso === iso(mondayOf(new Date()));   // snapshot squares only apply to this week
+  const snapMqls = BINGO.uncontacted_mqls || {}, snapUpd = BINGO.updates || {};
   const win = {
     mondayCall: bingoWinner(calls.filter(c => c.date === monday), c => [c.time || "99:99"]),
     firstMeeting: bingoWinner(meetings, m => [m.booked_date, m.booked_time || "99:99"]),
-    first25k: bingoWinner(deals.filter(d => (d.amount || 0) >= 25000 && BINGO_SQL_STAGES.has(d.stage)), d => [d.created_date, d.time || "99:99"]),
+    first20k: bingoWinner(deals.filter(d => (d.amount || 0) >= 20000 && BINGO_SQL_STAGES.has(d.stage)), d => [d.created_date, d.time || "99:99"]),
   };
   const per = {};
   bingoRepNames().forEach(rep => {
-    per[rep] = { rep, days, monday, sunday, friday: days[4], win,
+    const upd = snapUpd[rep] || {};
+    per[rep] = { rep, days, monday, sunday, friday: days[4], wednesday: days[2], win, isCurrent,
       calls: calls.filter(c => c.rep === rep),
       meetings: meetings.filter(m => m.rep === rep),
       deals: deals.filter(d => d.rep === rep),
-      icp: icp.filter(c => c.rep === rep) };
+      contacts: contacts.filter(c => c.rep === rep).length,
+      newAccounts: accounts.filter(a => a.rep === rep).length,
+      uncontactedMqls: (rep in snapMqls) ? snapMqls[rep] : null,
+      updatedPlatforms: !!upd.platforms,
+      updatedCrms: !!upd.crms };
   });
   return per;
 }
