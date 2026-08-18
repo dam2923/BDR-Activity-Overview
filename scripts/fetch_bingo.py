@@ -140,6 +140,15 @@ def property_options(object_type, prop):
     return {o["value"]: o["label"] for o in data.get("options", [])}
 
 
+def pipeline_stages(object_type):
+    """stage id -> label across every pipeline of an object type (leads/deals stages live in pipelines)."""
+    out = {}
+    for pl in http_get(f"{BASE}/crm/v3/pipelines/{object_type}").get("results", []):
+        for st in pl.get("stages", []):
+            out[str(st.get("id"))] = st.get("label")
+    return out
+
+
 def local_date_time(ts):
     """HubSpot ISO/epoch timestamp -> (YYYY-MM-DD, HH:MM) in local tz, or (None, None)."""
     if ts is None or ts == "":
@@ -438,14 +447,15 @@ def main():
     uncontacted_mqls = {n: 0 for n in REP_NAMES}
     try:
         obj = "leads"
-        try:
-            stage_map = property_options(obj, "hs_pipeline_stage")   # id -> label
+        try:                                     # lead stages come from the pipelines API, not property options
+            stage_map = pipeline_stages(obj) or property_options(obj, "hs_pipeline_stage")
         except Exception:                        # HubSpot may expect the objectTypeId for the Leads object
             obj = "0-136"
-            stage_map = property_options(obj, "hs_pipeline_stage")
-        mql_ids = [sid for sid, lab in stage_map.items() if MQL_STAGE_LABEL in (lab or "").lower()]
+            stage_map = pipeline_stages(obj) or property_options(obj, "hs_pipeline_stage")
+        mql_ids = [sid for sid, lab in stage_map.items()
+                   if "mql" in (lab or "").lower() or MQL_STAGE_LABEL in (lab or "").lower()]
         if not mql_ids:
-            raise ValueError(f"no 'Marketing Qualified Lead' stage; lead stages = {sorted(stage_map.values())}")
+            raise ValueError(f"no MQL stage; lead stages = {sorted(v for v in stage_map.values() if v)}")
         for r in search(obj, [owner_in, {"propertyName": "hs_pipeline_stage", "operator": "IN", "values": mql_ids}],
                         ["hubspot_owner_id", "hs_pipeline_stage"]):
             rep = rep_by_owner.get(str(r.get("properties", {}).get("hubspot_owner_id")))
