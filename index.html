@@ -317,6 +317,23 @@
   .bingo-qtable tr.lead{background:#2e1a23}
   .bingo-qtable tr.lead .qtotal{color:var(--bpink)}
 
+  /* winners strip (bottom bar) — who won a prize this week; each BDR shows their single top prize */
+  .bingo-winners{display:flex;align-items:center;flex-wrap:wrap;gap:10px}
+  .bingo-winners .bw-title{font-weight:800;color:var(--bpink);font-size:12px;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
+  .bingo-winners.empty .bw-none{color:var(--muted)}
+  .bw-chip{display:inline-flex;align-items:center;gap:7px;background:var(--panel);border:1px solid var(--border);border-radius:999px;padding:5px 13px 5px 6px}
+  .bw-chip .bw-badge{font-size:15px;line-height:1}
+  .bw-chip .bw-name{font-weight:800;color:var(--text);font-size:13px}
+  .bw-chip .bw-prize{color:var(--muted);font-size:12px}
+  /* full-opacity + larger at the bottom of the TV */
+  body.tv-mode .pgd-rules-bottom{opacity:1;padding:10px 20px}
+  body.tv-mode .bingo-winners{gap:14px}
+  body.tv-mode .bingo-winners .bw-title{font-size:17px}
+  body.tv-mode .bw-chip{padding:8px 18px 8px 8px;gap:9px}
+  body.tv-mode .bw-chip .bw-badge{font-size:21px}
+  body.tv-mode .bw-chip .bw-name{font-size:18px}
+  body.tv-mode .bw-chip .bw-prize{font-size:15px}
+
   /* full-line celebration flash */
   .bingo-flash{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;pointer-events:none;background:rgba(11,18,32,.55);opacity:0;overflow:hidden;animation:bingo-flash-in .45s ease-out forwards}
   .bingo-flash.out{animation:bingo-flash-out .5s ease-in forwards}
@@ -540,7 +557,6 @@ const REPS = [
   // AEs
   { name: "George Watson",        color: "#fb923c", team: "AE" },
   { name: "Henry McCloskey",      color: "#38bdf8", team: "AE" },
-  { name: "Zoe Cornelius",        color: "#fbbf24", team: "BDR" },
   { name: "Darien Bryan",         color: "#f87171", team: "AE" },
 ];
 
@@ -553,7 +569,6 @@ const PGD_TEAMS = [
       { rep: "Henry McCloskey" },
       { rep: "Tyreek Burke" },
       { rep: "Liam Bolger-Prentice" },
-      { rep: "Zoe Cornelius" },
     ]
   },
   {
@@ -1716,6 +1731,27 @@ function renderBingoQuarterHTML(){
     + `</div>`;
 }
 
+// ---- Winners strip (bottom of TV): who won a prize this week ----
+// Each BDR wins ONE prize — their single highest tier reached (prizes don't stack onto the same person).
+function renderBingoWinnersHTML(reps, states){
+  const rows = [];
+  reps.forEach(r => {
+    const tiers = bingoTiers(states[r]);
+    let top = -1; tiers.forEach((t, i) => { if(t.hit) top = i; });   // highest tier this rep reached
+    if(top >= 0) rows.push({ r, tier: tiers[top], rank: top, marked: states[r].filter(Boolean).length });
+  });
+  rows.sort((a, b) => (b.rank - a.rank) || (b.marked - a.marked));   // best prize first
+  if(!rows.length)
+    return `<div class="bingo-winners empty"><span class="bw-title">🏆 Winners this week</span>`
+         + `<span class="bw-none">No prizes claimed yet — be the first to ring the bell!</span></div>`;
+  const chips = rows.map(w =>
+    `<span class="bw-chip" title="${w.tier.name} — ${w.tier.reward}">`
+    + `<span class="bw-badge">${w.tier.badge}</span>${avatarSpan(w.r)}`
+    + `<span class="bw-name">${repMeta(w.r).first}</span>`
+    + `<span class="bw-prize">${w.tier.name} · ${w.tier.reward}</span></span>`).join("");
+  return `<div class="bingo-winners"><span class="bw-title">🏆 Winners this week</span>${chips}</div>`;
+}
+
 function renderBingo(){
   const body = document.getElementById("bingoBody");
   const prizesBar = document.getElementById("bingoPrizes");
@@ -1797,7 +1833,7 @@ function renderBingo(){
     renderBingo();
   }));
 
-  prizesBar.innerHTML = `<strong>Auto-marked</strong> squares fill from HubSpot · squares tagged <strong>tap</strong> are manual — tap a rep's initials to tick who earned it · the 9 pink cells are the <strong>red squares</strong> · resets weekly (Mon–Sun)`;
+  prizesBar.innerHTML = renderBingoWinnersHTML(reps, states);
 
   bingoDetectLines(reps, states);
 }
