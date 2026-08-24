@@ -50,7 +50,7 @@ TZ = ZoneInfo(os.environ.get("TIMEZONE", "Europe/London"))
 WEEKS = int(os.environ.get("BINGO_WEEKS", "14"))  # covers a full quarter for the champion table
 DAILY_CALL_TARGET = int(os.environ.get("DAILY_CALL_TARGET", "50"))  # 110% = 55, matching the card
 
-DEFAULT_BDRS = ["Tyreek Burke", "Jennifer Fasida", "Liam Bolger-Prentice", "Miles Smith", "Zoe Cornelius"]
+DEFAULT_BDRS = ["Tyreek Burke", "Jennifer Fasida", "Liam Bolger-Prentice", "Miles Smith"]
 REP_NAMES = [n.strip() for n in os.environ.get("BINGO_REP_NAMES", "").split(",") if n.strip()] or DEFAULT_BDRS
 
 BASE = "https://api.hubapi.com"

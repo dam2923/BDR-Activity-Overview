@@ -39,7 +39,7 @@ jobs:
           TIMEZONE: "Europe/London"
           # Comma-separated HubSpot owner full names to include. Must match the
           # owner's "First Last" exactly as it appears in /crm/v3/owners.
-          REP_NAMES: "Tyreek Burke,Jennifer Fasida,Liam Bolger-Prentice,Zoe Cornelius,Miles Smith,George Watson,Henry McCloskey,Darien Bryan"
+          REP_NAMES: "Tyreek Burke,Jennifer Fasida,Liam Bolger-Prentice,Miles Smith,George Watson,Henry McCloskey,Darien Bryan"
         run: python scripts/fetch_hubspot.py
 
       - name: Fetch Bingo data
@@ -47,7 +47,7 @@ jobs:
           HUBSPOT_TOKEN: ${{ secrets.HUBSPOT_TOKEN }}
           TIMEZONE: "Europe/London"
           # BDRs who get a bingo card (subset of REP_NAMES above).
-          BINGO_REP_NAMES: "Tyreek Burke,Jennifer Fasida,Liam Bolger-Prentice,Miles Smith,Zoe Cornelius"
+          BINGO_REP_NAMES: "Tyreek Burke,Jennifer Fasida,Liam Bolger-Prentice,Miles Smith"
           DAILY_CALL_TARGET: "50"     # drives the "110% of daily call target (55)" square
           BINGO_WEEKS: "14"           # rolling window — covers a full quarter for the champion table
         run: python scripts/fetch_bingo.py
