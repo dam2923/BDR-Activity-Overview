@@ -338,6 +338,7 @@ def main():
              "stage": stage_labels.get(p.get("dealstage"), p.get("dealstage") or ""),
              "type": type_labels.get(p.get("dealtype"), p.get("dealtype") or ""),
              "atlas": p.get("dealtype") in ATLAS_DEALTYPES,   # #14: creating an Atlas deal == booking an Atlas meeting
+             "new_logo": p.get("dealtype") == NEW_LOGO_DEALTYPE,  # #3: BDRs book Kato Pro as a New Logo deal (New Logo only)
              "society": p.get("pipeline") == SOCIETY_PIPELINE}
         deals.append(d)
         deal_by_id[str(r["id"])] = d

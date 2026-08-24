@@ -1557,7 +1557,7 @@ const BINGO_SQUARES = [
   // Row 1 (B · I · N · G · O)
   {n:1,  color:"white", label:"Make <b>1 call before 9am</b> on <b>4 days</b>",                        test:w => daysBefore9(w.calls, w.days) >= 4},
   {n:2,  color:"white", label:"Make <b>10 calls</b> to <b>Lighthouse Companies</b>",                   test:w => w.calls.filter(c => c.lh).length >= 10},
-  {n:3,  color:"red",   label:"Book <b>1 Kato Pro</b> meeting",                                        test:w => w.meetings.some(m => m.pro)},
+  {n:3,  color:"red",   label:"Book <b>1 Kato Pro</b> meeting",                                        test:w => w.meetings.some(m => m.net_new) || w.deals.some(d => d.new_logo || d.type === "New Logo Pro")},
   {n:4,  color:"white", label:"Handle a <b>call</b> lasting more than <b>10 minutes</b>",              test:w => w.calls.some(c => (c.dur || 0) > 600)},
   {n:5,  color:"red",   label:() => `Hit <b>110% of daily call target</b> (${Math.ceil(BINGO_CFG.target * 11 / 10)} calls) on a day`, test:w => anyDay(w.calls, Math.ceil(BINGO_CFG.target * 11 / 10))},
   // Row 2
