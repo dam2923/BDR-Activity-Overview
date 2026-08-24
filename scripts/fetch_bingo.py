@@ -337,6 +337,7 @@ def main():
         d = {"created_date": date, "time": tm, "rep": rep, "amount": amt,
              "stage": stage_labels.get(p.get("dealstage"), p.get("dealstage") or ""),
              "type": type_labels.get(p.get("dealtype"), p.get("dealtype") or ""),
+             "atlas": p.get("dealtype") in ATLAS_DEALTYPES,   # #14: creating an Atlas deal == booking an Atlas meeting
              "society": p.get("pipeline") == SOCIETY_PIPELINE}
         deals.append(d)
         deal_by_id[str(r["id"])] = d

@@ -297,6 +297,8 @@
   .bingo-sum-medal{width:16px;text-align:center}
   .bingo-sum-name{font-weight:700;color:var(--text)}
   .bingo-sum-prize{margin-left:auto;font-size:11px;color:var(--muted);white-space:nowrap}
+  .bingo-sum-prize.won{color:var(--bpink);font-weight:800}
+  .bingo-sum-more{font-size:10px;opacity:.85;font-weight:800}
   .bingo-sum-count{font-weight:800;color:var(--text);min-width:52px;text-align:right}
   .bingo-sum-count .muted{color:var(--muted);font-weight:500;font-size:11px}
 
@@ -1568,7 +1570,7 @@ const BINGO_SQUARES = [
   {n:11, color:"red",   label:"Book <b>1 Society</b> meeting",                                         test:w => w.deals.some(d => d.society)},
   {n:12, color:"white", label:"Add <b>10 contacts</b> to HubSpot",                                     test:w => w.contacts >= 10},
   {n:13, color:"white", label:"Handle a <b>call</b> lasting more than <b>5 minutes</b>",               test:w => w.calls.some(c => (c.dur || 0) > 300)},
-  {n:14, color:"red",   label:"Book <b>1 Atlas</b> meeting",                                           test:w => w.meetings.some(m => m.atlas)},
+  {n:14, color:"red",   label:"Book <b>1 Atlas</b> meeting",                                           test:w => w.meetings.some(m => m.atlas) || w.deals.some(d => d.atlas || d.type === "Atlas Only")},
   {n:15, color:"white", label:"Find and add <b>1 new prospect account</b>",                           test:w => w.newAccounts >= 1},
   // Row 4
   {n:16, color:"white", label:"Book <b>1 meeting</b> with a <b>Lighthouse Customer</b>",               test:w => w.meetings.some(m => m.lh_customer)},
@@ -1746,11 +1748,13 @@ function bingoFmtWhen(isoStr){
   if(isNaN(d.getTime())) return "";
   return d.toLocaleString("en-GB", {weekday:"short", hour:"2-digit", minute:"2-digit", hour12:false, timeZone:"Europe/London"}).replace(",", "");
 }
-function renderBingoWinnersHTML(reps, states){
+// Compute locked winners: each prize tier goes to the FIRST rep the dashboard sees reach it.
+// Returns perPrize (for the strip) and wonByRep (rep -> [tierIdx], for the "This week" panel).
+function bingoComputeWinners(reps, states){
   const isCurrent = bingoWeek === iso(mondayOf(new Date()));
   const when = (BINGO && BINGO.generated_at) || null;
   const tierMeta = bingoTiers(reps.length ? states[reps[0]] : BINGO_SQUARES.map(() => false));
-  const rows = [];
+  const perPrize = [], wonByRep = {};
   for(let i = 0; i < 6; i++){   // the 6 real prizes (index 6 = Qtr Champion, awarded separately)
     // reps currently holding tier i, most-progressed first (deterministic tie-break for a same-refresh dead heat)
     const hitters = reps.filter(r => bingoTiers(states[r])[i].hit)
@@ -1761,12 +1765,18 @@ function renderBingoWinnersHTML(reps, states){
       rec = { rep: hitters[0], at: isCurrent ? when : null };
       if(isCurrent) bingoPrizeSet(bingoWeek, i, rec);  // lock live current-week wins (past weeks: show, don't back-stamp)
     }
-    if(rec && reps.includes(rec.rep)) rows.push({ tier: tierMeta[i], rec });   // drop wins by ex-roster reps
+    if(rec && reps.includes(rec.rep)){                 // drop wins by ex-roster reps
+      perPrize.push({ i, tier: tierMeta[i], rec });
+      (wonByRep[rec.rep] = wonByRep[rec.rep] || []).push(i);
+    }
   }
-  if(!rows.length)
+  return { perPrize, wonByRep, tierMeta };
+}
+function renderBingoWinnersHTML(winners){
+  if(!winners.perPrize.length)
     return `<div class="bingo-winners empty"><span class="bw-title">🏆 Winners this week</span>`
          + `<span class="bw-none">No prizes claimed yet — be the first to ring the bell!</span></div>`;
-  const chips = rows.map(({ tier, rec }) => {
+  const chips = winners.perPrize.map(({ tier, rec }) => {
     const w = bingoFmtWhen(rec.at);
     return `<span class="bw-chip" title="${tier.reward}">`
       + `<span class="bw-badge">${tier.badge}</span>`
@@ -1790,6 +1800,7 @@ function renderBingo(){
   const per = buildBingoWeek(bingoWeek);
   const states = {};
   reps.forEach(r => { states[r] = bingoState(per[r]); });
+  const winners = bingoComputeWinners(reps, states);   // locked prize winners — shared by the strip + This-week panel
 
   const cells = BINGO_SQUARES.map((sq, i) => {
     const cls = ["bingo-cell"];
@@ -1814,11 +1825,18 @@ function renderBingo(){
       + `<span class="bingo-avs">${avs}</span></div>`;
   }).join("");
 
-  const summary = reps.map(r => ({ r, marked: states[r].filter(Boolean).length, tier: bingoTopTier(states[r]) }))
+  const summary = reps.map(r => ({ r, marked: states[r].filter(Boolean).length, won: winners.wonByRep[r] || [] }))
                       .sort((a, b) => b.marked - a.marked);
   const summaryHTML = summary.map((s, idx) => {
     const medal = idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : "";
-    const prize = s.tier ? `<span class="bingo-sum-prize" title="${s.tier.reward}">${s.tier.badge} ${s.tier.name}</span>` : `<span class="bingo-sum-prize">—</span>`;
+    let prize;
+    if(s.won.length){                                            // headline = the highest prize this rep actually WON
+      const top = winners.tierMeta[s.won[s.won.length - 1]];
+      const extra = s.won.length > 1 ? ` <span class="bingo-sum-more">+${s.won.length - 1}</span>` : "";
+      prize = `<span class="bingo-sum-prize won" title="Won: ${s.won.map(i => winners.tierMeta[i].name).join(", ")}">${top.badge} ${top.name}${extra}</span>`;
+    } else {
+      prize = `<span class="bingo-sum-prize">—</span>`;
+    }
     return `<div class="bingo-sum-row"><span class="bingo-sum-medal">${medal}</span>${avatarSpan(s.r)}`
       + `<span class="bingo-sum-name">${repMeta(s.r).first}</span>${prize}`
       + `<span class="bingo-sum-count">${s.marked}<span class="muted">/25</span></span></div>`;
@@ -1859,7 +1877,7 @@ function renderBingo(){
     renderBingo();
   }));
 
-  prizesBar.innerHTML = renderBingoWinnersHTML(reps, states);
+  prizesBar.innerHTML = renderBingoWinnersHTML(winners);
 
   bingoDetectLines(reps, states);
 }
