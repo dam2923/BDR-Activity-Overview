@@ -473,20 +473,34 @@ def main():
         uncontacted_mqls = {}
     print(f"  uncontacted_mqls: {uncontacted_mqls}", flush=True)
 
-    # ── #10/#17: a BDR updated Platforms/CRMs/renewal-date on a company they OWN this week (change history) ──
+    # ── #10/#17: a BDR updated Platforms/CRMs/renewal-date this week on one of THEIR companies (change history) ──
+    # The company's BDR is the `bdr_owner` field — NOT hubspot_owner_id, which is usually the AE after handoff.
+    # Scope to bdr_owner's companies that HAVE these fields set (bounds volume; the fields are also auto-enriched),
+    # then read change history and credit only the person who ACTUALLY made the edit (sourceId → BDR), so nightly
+    # enrichment writes never tick the square.
     updates = {}
     try:
         now_local = now.astimezone(TZ)
         cur_monday = (now_local - timedelta(days=now_local.weekday())).strftime("%Y-%m-%d")
         mod_gte = {"propertyName": "hs_lastmodifieddate", "operator": "GTE", "value": iso_ms(now - timedelta(days=7))}
-        owned = [str(r["id"]) for r in search("companies", [owner_in, mod_gte], ["hubspot_owner_id"])]
-        for props in batch_read_history("companies", owned, UPDATE_PLATFORM_PROPS + UPDATE_CRM_PROPS).values():
+        bdr_in = {"propertyName": "bdr_owner", "operator": "IN", "values": owner_ids}
+        cand = {}   # company id -> its BDR owner (rep name); bdr-owned, recently modified, with a platform/crm value
+        for prop in ("platform_subscriptions", "crms"):
+            has_it = {"propertyName": prop, "operator": "HAS_PROPERTY"}
+            for r in search("companies", [bdr_in, mod_gte, has_it], ["bdr_owner"]):
+                cand[str(r["id"])] = name_by_owner.get(str(r.get("properties", {}).get("bdr_owner") or ""))
+        for cid, props in batch_read_history("companies", list(cand), UPDATE_PLATFORM_PROPS + UPDATE_CRM_PROPS).items():
             for prop, entries in props.items():
                 for ent in entries:
                     edate, _ = local_date_time(ent.get("timestamp"))
                     if not edate or edate < cur_monday:
                         continue
-                    rep = users.get(str(ent.get("sourceId") or "")) or name_by_owner.get(str(ent.get("sourceId") or ""))
+                    src = str(ent.get("sourceId") or "")
+                    src2 = src.split(":")[-1]   # tolerate "userId:123"-style source ids
+                    rep = (users.get(src) or users.get(src2)
+                           or name_by_owner.get(src) or name_by_owner.get(src2))
+                    if rep is None and ent.get("sourceType") == "CRM_UI":
+                        rep = cand.get(cid)   # manual UI edit, source id unmapped → credit the company's BDR owner
                     if rep in REP_NAMES:
                         u = updates.setdefault(rep, {"platforms": False, "crms": False})
                         if prop in UPDATE_PLATFORM_PROPS:
