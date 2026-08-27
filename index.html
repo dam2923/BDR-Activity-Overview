@@ -1564,7 +1564,7 @@ const BINGO_SQUARES = [
   {n:6,  color:"white", label:"Book <b>1 meeting</b> scheduled for the <b>current week</b>",           test:w => w.meetings.some(m => m.meeting_date && m.meeting_date >= w.monday && m.meeting_date <= w.sunday)},
   {n:7,  color:"red",   label:"Complete <b>50 calls</b> on a <b>Friday</b>",                           test:w => countOn(w.calls, w.friday) >= 50},
   {n:8,  color:"white", label:"Have <b>0 Uncontacted Leads (MQLs)</b> remaining by EOW",               test:w => w.isCurrent && w.uncontactedMqls === 0},
-  {n:9,  color:"white", label:"Call more than <b>3 contacts</b> at a company",                         test:w => maxContactsAtCompany(w.calls) > 3},
+  {n:9,  color:"white", label:"Call <b>3+ contacts</b> at a company",                                   test:w => maxContactsAtCompany(w.calls) >= 3},
   {n:10, color:"white", label:"Make <b>1 Update</b> to <b>Platforms They Use / Renewal Date</b>",      test:w => w.isCurrent && w.updatedPlatforms},
   // Row 3
   {n:11, color:"red",   label:"Book <b>1 Society</b> meeting",                                         test:w => w.deals.some(d => d.society)},
