@@ -456,8 +456,27 @@ def main():
         print(f"  ⚠ new-accounts fetch failed ({e})", file=sys.stderr)
     print(f"  new_accounts: {len(new_accounts)}", flush=True)
 
-    # ── #8: LEADs currently in the "Marketing Qualified Lead" stage, per BDR (snapshot; 0 -> square ticks) ──
-    uncontacted_mqls = {n: 0 for n in REP_NAMES}
+    # ── Historical persistence: past weeks must KEEP the squares they earned. #8/#10/#17 used to be
+    # current-week-only snapshots, so they blanked out once the week rolled over (and undercounted the quarter
+    # table). Now uncontacted_mqls/updates are keyed BY WEEK: #10/#17 are rebuilt per week from change history
+    # (so last week backfills); #8 is a live snapshot we can't backfill, so it's persisted forward each run. ──
+    now_local = now.astimezone(TZ)
+    cur_monday = (now_local - timedelta(days=now_local.weekday())).strftime("%Y-%m-%d")
+    def week_monday(dstr):
+        dt = datetime.strptime(dstr, "%Y-%m-%d")
+        return (dt - timedelta(days=dt.weekday())).strftime("%Y-%m-%d")
+    def _perweek(d):     # keep a prior dict only if it's already week-keyed ("YYYY-MM-DD"); else migrate off old flat shape
+        d = d or {}
+        return d if all(isinstance(k, str) and len(k) == 10 and k[4:5] == "-" for k in d) else {}
+    prev_data = {}
+    try:
+        with open(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "bingo.json"))) as _pf:
+            prev_data = json.load(_pf)
+    except Exception:
+        prev_data = {}
+
+    # ── #8: LEADs currently in the "Marketing Qualified Lead" stage, per BDR (snapshot) → persisted per week ──
+    cur_mqls = {n: 0 for n in REP_NAMES}
     stage_filter = {"propertyName": "hs_pipeline_stage", "operator": "IN", "values": [MQL_STAGE_ID]}
     try:
         try:
@@ -466,23 +485,25 @@ def main():
             rows = search("0-136", [owner_in, stage_filter], ["hubspot_owner_id", "hs_pipeline_stage"])
         for r in rows:
             rep = rep_by_owner.get(str(r.get("properties", {}).get("hubspot_owner_id")))
-            if rep in uncontacted_mqls:
-                uncontacted_mqls[rep] += 1
-    except Exception as e:  # noqa: BLE001 — needs crm.objects.leads.read; unknown -> {} so #8 stays blank (not 0=tick)
-        print(f"  ⚠ MQL-leads fetch failed ({e}); #8 left blank", file=sys.stderr)
-        uncontacted_mqls = {}
-    print(f"  uncontacted_mqls: {uncontacted_mqls}", flush=True)
+            if rep in cur_mqls:
+                cur_mqls[rep] += 1
+    except Exception as e:  # noqa: BLE001 — needs crm.objects.leads.read; unknown this cycle → keep the week's prior value
+        print(f"  ⚠ MQL-leads fetch failed ({e}); keeping prior value for the week", file=sys.stderr)
+        cur_mqls = None
+    uncontacted_mqls = _perweek(prev_data.get("uncontacted_mqls"))   # can't backfill history; persist forward
+    if cur_mqls is not None:
+        uncontacted_mqls[cur_monday] = cur_mqls
+    print(f"  uncontacted_mqls[{cur_monday}]: {cur_mqls}", flush=True)
 
-    # ── #10/#17: a BDR updated Platforms/CRMs/renewal-date this week on one of THEIR companies (change history) ──
+    # ── #10/#17: BDRs updating Platforms/CRMs/renewal-date on THEIR companies (bdr_owner), bucketed PER WEEK ──
     # The company's BDR is the `bdr_owner` field — NOT hubspot_owner_id, which is usually the AE after handoff.
     # Scope to bdr_owner's companies that HAVE these fields set (bounds volume; the fields are also auto-enriched),
     # then read change history and credit only the person who ACTUALLY made the edit (sourceId → BDR), so nightly
-    # enrichment writes never tick the square.
-    updates = {}
+    # enrichment writes never tick the square. Bucketing each change by its own week rebuilds history (incl. past
+    # weeks) each run; we also union in the prior result so a company dropping out of scope can't erase a past tick.
+    updates = _perweek(prev_data.get("updates"))   # {weekMonday: {rep: {platforms, crms}}}
     try:
-        now_local = now.astimezone(TZ)
-        cur_monday = (now_local - timedelta(days=now_local.weekday())).strftime("%Y-%m-%d")
-        mod_gte = {"propertyName": "hs_lastmodifieddate", "operator": "GTE", "value": iso_ms(now - timedelta(days=7))}
+        mod_gte = {"propertyName": "hs_lastmodifieddate", "operator": "GTE", "value": iso_ms(now - timedelta(days=30))}
         bdr_in = {"propertyName": "bdr_owner", "operator": "IN", "values": owner_ids}
         cand = {}   # company id -> its BDR owner (rep name); bdr-owned, recently modified, with a platform/crm value
         for prop in ("platform_subscriptions", "crms"):
@@ -493,7 +514,7 @@ def main():
             for prop, entries in props.items():
                 for ent in entries:
                     edate, _ = local_date_time(ent.get("timestamp"))
-                    if not edate or edate < cur_monday:
+                    if not edate or edate < TRACKING_START:   # only weeks the board tracks
                         continue
                     src = str(ent.get("sourceId") or "")
                     src2 = src.split(":")[-1]   # tolerate "userId:123"-style source ids
@@ -502,14 +523,14 @@ def main():
                     if rep is None and ent.get("sourceType") == "CRM_UI":
                         rep = cand.get(cid)   # manual UI edit, source id unmapped → credit the company's BDR owner
                     if rep in REP_NAMES:
-                        u = updates.setdefault(rep, {"platforms": False, "crms": False})
+                        u = updates.setdefault(week_monday(edate), {}).setdefault(rep, {"platforms": False, "crms": False})
                         if prop in UPDATE_PLATFORM_PROPS:
                             u["platforms"] = True
                         if prop in UPDATE_CRM_PROPS:
                             u["crms"] = True
     except Exception as e:  # noqa: BLE001 — needs companies read + property history
         print(f"  ⚠ property-update history failed ({e}); #10/#17 default to False", file=sys.stderr)
-    print(f"  updates: {updates}", flush=True)
+    print(f"  updates weeks: {sorted(updates)}", flush=True)
 
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),

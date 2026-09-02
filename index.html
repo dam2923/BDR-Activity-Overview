@@ -1563,9 +1563,9 @@ const BINGO_SQUARES = [
   // Row 2
   {n:6,  color:"white", label:"Book <b>1 meeting</b> scheduled for the <b>current week</b>",           test:w => w.meetings.some(m => m.meeting_date && m.meeting_date >= w.monday && m.meeting_date <= w.sunday)},
   {n:7,  color:"red",   label:"Complete <b>50 calls</b> on a <b>Friday</b>",                           test:w => countOn(w.calls, w.friday) >= 50},
-  {n:8,  color:"white", label:"Have <b>0 Uncontacted Leads (MQLs)</b> remaining by EOW",               test:w => w.isCurrent && w.uncontactedMqls === 0},
+  {n:8,  color:"white", label:"Have <b>0 Uncontacted Leads (MQLs)</b> remaining by EOW",               test:w => w.uncontactedMqls === 0},
   {n:9,  color:"white", label:"Call <b>3+ contacts</b> at a company",                                   test:w => maxContactsAtCompany(w.calls) >= 3},
-  {n:10, color:"white", label:"Make <b>1 Update</b> to <b>Platforms They Use / Renewal Date</b>",      test:w => w.isCurrent && w.updatedPlatforms},
+  {n:10, color:"white", label:"Make <b>1 Update</b> to <b>Platforms They Use / Renewal Date</b>",      test:w => w.updatedPlatforms},
   // Row 3
   {n:11, color:"red",   label:"Book <b>1 Society</b> meeting",                                         test:w => w.deals.some(d => d.society)},
   {n:12, color:"white", label:"Add <b>10 contacts</b> to HubSpot",                                     test:w => w.contacts >= 10},
@@ -1574,7 +1574,7 @@ const BINGO_SQUARES = [
   {n:15, color:"white", label:"Find and add <b>1 new prospect account</b>",                           test:w => w.newAccounts >= 1},
   // Row 4
   {n:16, color:"white", label:"Book <b>1 meeting</b> with a <b>Lighthouse Customer</b>",               test:w => w.meetings.some(m => m.lh_customer)},
-  {n:17, color:"white", label:"Make <b>1 Update</b> to <b>Current or Past CRMs / Renewal Date</b>",    test:w => w.isCurrent && w.updatedCrms},
+  {n:17, color:"white", label:"Make <b>1 Update</b> to <b>Current or Past CRMs / Renewal Date</b>",    test:w => w.updatedCrms},
   {n:18, color:"red",   label:"Book the <b>first meeting</b> of the week",                             test:w => w.win.firstMeeting === w.rep},
   {n:19, color:"white", label:"Book <b>1 meeting</b> with a <b>Previous Customer</b>",                 test:w => w.meetings.some(m => m.prev_customer) || w.deals.some(d => d.prev_customer)},
   {n:20, color:"red",   label:"First to create <b>£20k+ SQL pipe</b>",                                 test:w => w.win.first20k === w.rep},
@@ -1630,7 +1630,9 @@ function buildBingoWeek(mondayIso){
   const accounts = (BINGO.new_accounts || []).filter(a => inWk(a.created_date));
   const monday = days[0];
   const isCurrent = mondayIso === iso(mondayOf(new Date()));   // snapshot squares only apply to this week
-  const snapMqls = BINGO.uncontacted_mqls || {}, snapUpd = BINGO.updates || {};
+  // #8/#10/#17 snapshot data is keyed BY WEEK so past weeks keep what they earned (see fetch_bingo.py)
+  const snapMqls = (BINGO.uncontacted_mqls && BINGO.uncontacted_mqls[mondayIso]) || {};
+  const snapUpd = (BINGO.updates && BINGO.updates[mondayIso]) || {};
   const win = {
     mondayCall: bingoWinner(calls.filter(c => c.date === monday), c => [c.time || "99:99"]),
     firstMeeting: bingoWinner(meetings, m => [m.booked_date, m.booked_time || "99:99"]),
