@@ -1581,7 +1581,7 @@ const BINGO_SQUARES = [
   // Row 5
   {n:21, color:"white", label:"Make <b>50 calls</b> on <b>Wednesday</b>",                              test:w => countOn(w.calls, w.wednesday) >= 50},
   {n:22, color:"red",   label:"Make <b>50 calls before 1pm</b>",                                       test:w => anyDayFilter(w.calls, c => hmin(c.time) < BINGO_CFG.onepm, 50)},
-  {n:23, color:"white", label:"Book <b>1 meeting</b> with a <b>Lighthouse Prospect</b>",               test:w => w.meetings.some(m => m.lh_prospect)},
+  {n:23, color:"white", label:"Book <b>1 meeting</b> with a <b>Lighthouse Prospect</b>",               test:w => w.meetings.some(m => m.lighthouse)},
   {n:24, color:"red",   label:"Generate <b>2 SQOs</b> in the week",                                    test:w => w.deals.filter(d => BINGO_SQO_STAGES.has(d.stage)).length >= 2},
   {n:25, color:"white", label:"Make the <b>first call</b> on a Monday",                                test:w => w.win.mondayCall === w.rep},
 ];
