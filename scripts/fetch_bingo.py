@@ -317,7 +317,8 @@ def main():
     deal_by_id = {}   # deal_id -> deal dict, for the previous-customer company enrichment
     for r in search_time_chunked("deals", "createdate", [],
                                  ["createdate", "hubspot_owner_id", "hs_created_by_user_id",
-                                  "amount", "amount_in_home_currency", "dealstage", "dealtype", "pipeline"],
+                                  "amount", "amount_in_home_currency", "dealstage", "dealtype", "pipeline",
+                                  "date_first_entered_sqo"],   # #24: the week a deal first hit SQO (current stage may be past it)
                                  start, now):
         p = r.get("properties", {})
         # credit the BDR who CREATED the deal (resolve via user-id OR owner-id map — the field can hold
@@ -334,11 +335,14 @@ def main():
             amt = float(amt)
         except (ValueError, TypeError):
             amt = 0.0
+        sqo_raw = p.get("date_first_entered_sqo")   # a DATE prop ("YYYY-MM-DD") on newer records, epoch-ms on older
+        sqo_date = sqo_raw[:10] if (isinstance(sqo_raw, str) and "-" in sqo_raw) else (local_date_time(sqo_raw)[0] if sqo_raw else None)
         d = {"created_date": date, "time": tm, "rep": rep, "amount": amt,
              "stage": stage_labels.get(p.get("dealstage"), p.get("dealstage") or ""),
              "type": type_labels.get(p.get("dealtype"), p.get("dealtype") or ""),
              "atlas": p.get("dealtype") in ATLAS_DEALTYPES,   # #14: creating an Atlas deal == booking an Atlas meeting
              "new_logo": p.get("dealtype") == NEW_LOGO_DEALTYPE,  # #3: BDRs book Kato Pro as a New Logo deal (New Logo only)
+             "sqo_date": sqo_date,                            # #24: week the deal first entered SQO (not "created this week")
              "society": p.get("pipeline") == SOCIETY_PIPELINE}
         deals.append(d)
         deal_by_id[str(r["id"])] = d

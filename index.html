@@ -1582,7 +1582,7 @@ const BINGO_SQUARES = [
   {n:21, color:"white", label:"Make <b>50 calls</b> on <b>Wednesday</b>",                              test:w => countOn(w.calls, w.wednesday) >= 50},
   {n:22, color:"red",   label:"Make <b>50 calls before 1pm</b>",                                       test:w => anyDayFilter(w.calls, c => hmin(c.time) < BINGO_CFG.onepm, 50)},
   {n:23, color:"white", label:"Book <b>1 meeting</b> with a <b>Lighthouse Prospect</b>",               test:w => w.meetings.some(m => m.lighthouse)},
-  {n:24, color:"red",   label:"Generate <b>2 SQOs</b> in the week",                                    test:w => w.deals.filter(d => BINGO_SQO_STAGES.has(d.stage)).length >= 2},
+  {n:24, color:"red",   label:"Generate <b>2 SQOs</b> in the week",                                    test:w => w.sqoCount >= 2},
   {n:25, color:"white", label:"Make the <b>first call</b> on a Monday",                                test:w => w.win.mondayCall === w.rep},
 ];
 
@@ -1626,6 +1626,7 @@ function buildBingoWeek(mondayIso){
   const calls = (BINGO.calls || []).filter(c => inWk(c.date));
   const meetings = (BINGO.meetings || []).filter(m => inWk(m.booked_date));
   const deals = (BINGO.deals || []).filter(d => inWk(d.created_date));
+  const sqoDeals = (BINGO.deals || []).filter(d => d.sqo_date && inWk(d.sqo_date));  // #24: entered SQO this week (any create date)
   const contacts = (BINGO.contacts_created || []).filter(c => inWk(c.created_date));
   const accounts = (BINGO.new_accounts || []).filter(a => inWk(a.created_date));
   const monday = days[0];
@@ -1645,6 +1646,7 @@ function buildBingoWeek(mondayIso){
       calls: calls.filter(c => c.rep === rep),
       meetings: meetings.filter(m => m.rep === rep),
       deals: deals.filter(d => d.rep === rep),
+      sqoCount: sqoDeals.filter(d => d.rep === rep).length,
       contacts: contacts.filter(c => c.rep === rep).length,
       newAccounts: accounts.filter(a => a.rep === rep).length,
       uncontactedMqls: (rep in snapMqls) ? snapMqls[rep] : null,
