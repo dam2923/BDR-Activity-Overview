@@ -24,6 +24,7 @@
   .updated{color:var(--muted);font-size:13px}
   .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:20px}
   .row{display:grid;grid-template-columns:1fr;gap:16px;margin-top:16px}
+  .row>.card{min-width:0}   /* let grid-item cards shrink so inner overflow-x:auto scrolls, not the whole page */
   @media(min-width:900px){.row.two{grid-template-columns:1fr 1fr}}
   .filters{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:4px 0 8px}
   .filters .label{color:var(--muted);font-size:13px;margin-right:6px}
@@ -893,6 +894,29 @@ const dowCtx = document.getElementById("dow");
 const dailyWideCtx = document.getElementById("dailyWide");
 let dailyChart, weeklyChart, dowChart, dailyWideChart;
 
+// draws the stack TOTAL above each bar so values are readable without hovering
+const stackTotals = {
+  id: "stackTotals",
+  afterDatasetsDraw(chart){
+    const ctx = chart.ctx, m0 = chart.getDatasetMeta(0);
+    if(!m0 || !m0.data || !m0.data.length) return;
+    ctx.save();
+    ctx.font = "700 10px Inter, ui-sans-serif, sans-serif";
+    ctx.fillStyle = "#e6ebf5"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    for(let i=0;i<m0.data.length;i++){
+      let total=0, minY=Infinity, cx=null;
+      chart.data.datasets.forEach((ds,di)=>{
+        if(!chart.isDatasetVisible(di)) return;
+        total += (+ds.data[i] || 0);
+        const el = chart.getDatasetMeta(di).data[i];
+        if(el && el.y < minY){ minY = el.y; cx = el.x; }
+      });
+      if(total > 0 && cx != null) ctx.fillText(Math.round(total), cx, minY - 2);
+    }
+    ctx.restore();
+  }
+};
+
 function render(){
   const visibleReps = getVisibleReps();
   const idxs = [];
@@ -989,7 +1013,7 @@ function render(){
     datasets: shown.map(r=>({ label:r.name, data:data[r.name], backgroundColor:r.color, borderRadius:2 })),
   };
   if(dailyWideChart) dailyWideChart.destroy();
-  dailyWideChart = new Chart(dailyWideCtx,{type:"bar",data:dailyWideData,options:{
+  dailyWideChart = new Chart(dailyWideCtx,{type:"bar",data:dailyWideData,plugins:[stackTotals],options:{
     responsive:true, maintainAspectRatio:false,
     interaction:{mode:"index",intersect:false},
     plugins:{legend:{position:"bottom",labels:{boxWidth:10,boxHeight:10,usePointStyle:true}}},
@@ -1009,7 +1033,7 @@ function render(){
     }))
   };
   if(weeklyChart) weeklyChart.destroy();
-  weeklyChart = new Chart(weeklyCtx,{type:"bar",data:weeklyChartData,options:{
+  weeklyChart = new Chart(weeklyCtx,{type:"bar",data:weeklyChartData,plugins:[stackTotals],options:{
     responsive:true, maintainAspectRatio:false,
     plugins:{legend:{position:"bottom",labels:{boxWidth:10,boxHeight:10,usePointStyle:true}}},
     scales:{
@@ -1036,7 +1060,7 @@ function render(){
     datasets: shown.map(r=>({ label:r.name, data:dowAvg[r.name], backgroundColor:r.color, borderRadius:4 })),
   };
   if(dowChart) dowChart.destroy();
-  dowChart = new Chart(dowCtx,{type:"bar",data:dowChartData,options:{
+  dowChart = new Chart(dowCtx,{type:"bar",data:dowChartData,plugins:[stackTotals],options:{
     responsive:true, maintainAspectRatio:false,
     plugins:{legend:{position:"bottom",labels:{boxWidth:10,boxHeight:10,usePointStyle:true}},
       tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${c.parsed.y.toFixed(1)}/day`}}},
