@@ -455,6 +455,17 @@
         </div>
       </div>
 
+      <div class="row" style="margin-top:20px">
+        <div class="card" style="background:var(--panel2)">
+          <h3>Every weekday across the period <span class="label" style="font-weight:400;text-transform:none;letter-spacing:0">— Fridays in pink · scroll sideways &rarr;</span></h3>
+          <div style="overflow-x:auto">
+            <div class="chart-wrap" id="dailyWideWrap" style="height:340px;min-width:100%">
+              <canvas id="dailyWide"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="row two" style="margin-top:20px">
         <div class="card" style="background:var(--panel2)">
           <h3>Avg calls by day of week</h3>
@@ -879,7 +890,8 @@ Chart.defaults.font.family = "Inter,system-ui,sans-serif";
 const dailyCtx = document.getElementById("daily");
 const weeklyCtx = document.getElementById("weekly");
 const dowCtx = document.getElementById("dow");
-let dailyChart, weeklyChart, dowChart;
+const dailyWideCtx = document.getElementById("dailyWide");
+let dailyChart, weeklyChart, dowChart, dailyWideChart;
 
 function render(){
   const visibleReps = getVisibleReps();
@@ -965,6 +977,27 @@ function render(){
     scales:{
       x:{ grid:{display:false}, ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:maxTicks} },
       y:{ grid:{color:"#1b2740"}, beginAtZero:true, ticks:{precision:0} }
+    }
+  }});
+
+  // ---------- Wide daily chart: every weekday across the whole range, horizontally scrollable ----------
+  const wideWrap = document.getElementById("dailyWideWrap");
+  wideWrap.style.width = Math.max(days.length * 28, 600) + "px";   // ~28px/day so each day gets its own labelled bar
+  const isFri = i => days[i] && days[i].getDay() === 5;
+  const dailyWideData = {
+    labels: days.map(d => d.toLocaleDateString(undefined,{weekday:"short",day:"numeric",month:"short"}).replace(",","")),
+    datasets: shown.map(r=>({ label:r.name, data:data[r.name], backgroundColor:r.color, borderRadius:2 })),
+  };
+  if(dailyWideChart) dailyWideChart.destroy();
+  dailyWideChart = new Chart(dailyWideCtx,{type:"bar",data:dailyWideData,options:{
+    responsive:true, maintainAspectRatio:false,
+    interaction:{mode:"index",intersect:false},
+    plugins:{legend:{position:"bottom",labels:{boxWidth:10,boxHeight:10,usePointStyle:true}}},
+    scales:{
+      x:{ stacked:true, grid:{display:false},
+          ticks:{ autoSkip:false, maxRotation:90, minRotation:90, font:{size:10},
+                  color:(c)=> isFri(c.index) ? "#ff6ea1" : "#8a94a6" } },
+      y:{ stacked:true, grid:{color:"#1b2740"}, beginAtZero:true, ticks:{precision:0} }
     }
   }});
 
