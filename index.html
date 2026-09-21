@@ -45,6 +45,8 @@
   th:first-child,td:first-child{text-align:left}
   thead th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
   tbody tr:hover{background:#0f1830}
+  td.dow-low{color:#f87171;font-weight:700}                    /* each rep's lowest weekday */
+  #dowTable tr.dow-team td{font-weight:800;border-top:2px solid var(--border)}
   .chart-wrap{position:relative;height:320px}
   .pill{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle}
   .foot{color:var(--muted);font-size:12px;margin-top:18px}
@@ -450,6 +452,17 @@
         <div class="card" style="background:var(--panel2)">
           <h3>Weekly calls by rep (Monday week-start)</h3>
           <div class="chart-wrap"><canvas id="weekly"></canvas></div>
+        </div>
+      </div>
+
+      <div class="row two" style="margin-top:20px">
+        <div class="card" style="background:var(--panel2)">
+          <h3>Avg calls by day of week</h3>
+          <div class="chart-wrap"><canvas id="dow"></canvas></div>
+        </div>
+        <div class="card" style="background:var(--panel2);overflow-x:auto">
+          <h3>Avg calls / weekday <span class="label" style="font-weight:400;text-transform:none;letter-spacing:0">— each rep's lowest day in red</span></h3>
+          <table id="dowTable"></table>
         </div>
       </div>
 
@@ -865,7 +878,8 @@ Chart.defaults.font.family = "Inter,system-ui,sans-serif";
 
 const dailyCtx = document.getElementById("daily");
 const weeklyCtx = document.getElementById("weekly");
-let dailyChart, weeklyChart;
+const dowCtx = document.getElementById("dow");
+let dailyChart, weeklyChart, dowChart;
 
 function render(){
   const visibleReps = getVisibleReps();
@@ -970,6 +984,51 @@ function render(){
       y:{ stacked:true, grid:{color:"#1b2740"}, beginAtZero:true, ticks:{precision:0} }
     }
   }});
+
+  // ---------- By day of week (spot weekday drop-off, e.g. Fridays) ----------
+  // Average calls a rep makes on each weekday = total on those dates / number of those dates in range,
+  // so ranges of any length (and partial weeks) are comparable.
+  const DOW = [1,2,3,4,5], DOW_NAMES = ["Monday","Tuesday","Wednesday","Thursday","Friday"];
+  const dowIdx = {1:[],2:[],3:[],4:[],5:[]};   // weekday -> indices into days[]
+  days.forEach((d,i)=>{ const wd = d.getDay(); if(wd>=1 && wd<=5) dowIdx[wd].push(i); });
+  const dowAvg = {};   // repName -> [Mon..Fri] avg calls/day
+  shown.forEach(r=>{
+    dowAvg[r.name] = DOW.map(wd=>{
+      const ix = dowIdx[wd]; if(!ix.length) return 0;
+      return ix.reduce((a,i)=>a+(data[r.name][i]||0),0) / ix.length;
+    });
+  });
+  const dowChartData = {
+    labels: DOW_NAMES,
+    datasets: shown.map(r=>({ label:r.name, data:dowAvg[r.name], backgroundColor:r.color, borderRadius:4 })),
+  };
+  if(dowChart) dowChart.destroy();
+  dowChart = new Chart(dowCtx,{type:"bar",data:dowChartData,options:{
+    responsive:true, maintainAspectRatio:false,
+    plugins:{legend:{position:"bottom",labels:{boxWidth:10,boxHeight:10,usePointStyle:true}},
+      tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${c.parsed.y.toFixed(1)}/day`}}},
+    scales:{
+      x:{ stacked:true, grid:{display:false} },
+      y:{ stacked:true, grid:{color:"#1b2740"}, beginAtZero:true, ticks:{precision:0} }
+    }
+  }});
+
+  // by-weekday table: avg calls/day per rep + team row; each row's lowest weekday flagged red
+  const dt = document.getElementById("dowTable");
+  if(shown.length && days.length){
+    const teamAvg = DOW.map((_,wi)=> shown.reduce((a,r)=>a+dowAvg[r.name][wi], 0));  // avg team calls that weekday
+    const row = (name, colorDot, vals, cls="") => {
+      const mn = Math.min(...vals);
+      return `<tr class="${cls}"><td>${colorDot}${name}</td>`
+        + vals.map(v=>`<td class="${v===mn ? "dow-low" : ""}">${v.toFixed(1)}</td>`).join("") + "</tr>";
+    };
+    dt.innerHTML = "<thead><tr><th>Rep</th>" + DOW_NAMES.map(n=>`<th>${n.slice(0,3)}</th>`).join("") + "</tr></thead><tbody>"
+      + shown.map(r=>row(r.name, `<span class="pill" style="background:${r.color}"></span>`, dowAvg[r.name])).join("")
+      + row("Team total", "", teamAvg, "dow-team")
+      + "</tbody>";
+  } else {
+    dt.innerHTML = "";
+  }
 
   // ---------- Deals by week ----------
   const dealsByWeek = {};  // weekKey -> { repName: count }
